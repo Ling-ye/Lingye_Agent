@@ -46,7 +46,7 @@ class LingyeLLM:
         if not self.model:
             self.model = self._get_default_model()
         if not all([self.api_key, self.base_url]):
-            raise HelloAgentsException("API密钥和服务地址必须被提供或在.env文件中定义。")
+            raise LingyeAgentsException("API密钥和服务地址必须被提供或在.env文件中定义。")
 
         # 创建OpenAI客户端
         self._client = self._create_client()
@@ -283,7 +283,7 @@ class LingyeLLM:
 
         except Exception as e:
             print(f"❌ 调用LLM API时发生错误: {e}")
-            raise HelloAgentsException(f"LLM调用失败: {str(e)}")
+            raise LingyeAgentsException(f"LLM调用失败: {str(e)}")
 
     def invoke(self, messages: list[dict[str, str]], **kwargs) -> str:
         """
@@ -300,7 +300,7 @@ class LingyeLLM:
             )
             return response.choices[0].message.content
         except Exception as e:
-            raise HelloAgentsException(f"LLM调用失败: {str(e)}")
+            raise LingyeAgentsException(f"LLM调用失败: {str(e)}")
 
     def stream_invoke(self, messages: list[dict[str, str]], **kwargs) -> Iterator[str]:
         """
