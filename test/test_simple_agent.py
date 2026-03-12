@@ -62,7 +62,7 @@ for chunk in basic_agent.stream_run("请解释什么是人工智能"):
 # 测试4:动态添加工具
 print("\n=== 测试4:动态工具管理 ===")
 print(f"添加工具前: {basic_agent.has_tools()}")
-basic_agent.add_tool(calculator)
+basic_agent.add_tool(simple_calculate)
 print(f"添加工具后: {basic_agent.has_tools()}")
 print(f"可用工具: {basic_agent.list_tools()}")
 
