@@ -3,10 +3,10 @@
 from typing import Optional, Iterator, TYPE_CHECKING
 import re
 
-from ..core.agent import Agent
-from ..core.llm import LingyeLLm
-from ..core.config import Config
-from ..core.message import Message
+from core.agent import Agent
+from core.llm import LingyeLLM
+from core.config import Config
+from core.message import Message
 
 if TYPE_CHECKING:
     from ..tools.registry import ToolRegistry
@@ -17,7 +17,7 @@ class SimpleAgent(Agent):
     def __init__(
         self,
         name: str,
-        llm: LingyeLLm,
+        llm: LingyeLLM,
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         tool_registry: Optional['ToolRegistry'] = None,

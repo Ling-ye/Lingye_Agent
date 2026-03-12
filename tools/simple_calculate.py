@@ -1,7 +1,7 @@
 import ast
 import operator
 import math
-from registry import ToolRegistry
+from .registry import ToolRegistry
 
 def simple_calculate(expression: str) -> str:
     """简单的数学计算函数"""

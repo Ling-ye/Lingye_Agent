@@ -1,8 +1,8 @@
 import os
-from typing import Optional
+from typing import Literal, Optional, Iterator
 from openai import OpenAI
 
-
+SUPPORTED_PROVIDERS = os.getenv("SUPPORTED_PROVIDERS", "openai,aihubmix,deepseek,qwen,modelscope,kimi,zhipu,ollama,vllm,local").split(",")
 
 class LingyeLLM:
     def __init__(
