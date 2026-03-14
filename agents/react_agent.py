@@ -2,11 +2,11 @@
 
 import re
 from typing import Optional, List, Dict, Any, Tuple
-from ..core.agent import Agent
-from ..core.llm import LingyeLLM
-from ..core.config import Config
-from ..core.message import Message
-from ..tools.registry import ToolRegistry
+from core.agent import Agent
+from core.llm import LingyeLLM
+from core.config import Config
+from core.message import Message
+from tools.registry import ToolRegistry
 
 # 默认ReAct提示词模板
 DEFAULT_REACT_PROMPT = """你是模仿钉宫理惠的傲娇的AI助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
