@@ -7,9 +7,9 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from dotenv import load_dotenv
-from core.llm import LingyeLLM
-from tools.registry import ToolRegistry
-from agents.react_agent import ReActAgent
+from ..core.llm import LingyeLLM
+from ..tools.registry import ToolRegistry
+from ..agents.react_agent import ReActAgent
 
 # 加载环境变量
 load_dotenv()
