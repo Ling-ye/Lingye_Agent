@@ -52,7 +52,7 @@ class ReflectionAgent(Agent):
             system_prompt: 系统提示词（定义角色和反思策略）
             config: 配置对象
             max_iterations: 最大迭代次数
-            tool_registry: 工具注册表（可选）
+            tool_registry: 工具注册表
             enable_tool_calling: 是否启用工具调用
             max_tool_iterations: 最大工具调用迭代次数
         """
