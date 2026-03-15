@@ -1,10 +1,14 @@
 """Agent基类"""
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING, AsyncGenerator
 from .message import Message
 from .llm import LingyeLLM
 from .config import Config
+if TYPE_CHECKING:
+    from ..tools.registry import ToolRegistry
+
+
 
 class Agent(ABC):
     """Agent基类"""
@@ -14,13 +18,15 @@ class Agent(ABC):
         name: str,
         llm: LingyeLLM,
         system_prompt: Optional[str] = None,
-        config: Optional[Config] = None
+        config: Optional[Config] = None,
+        tool_registry: Optional['ToolRegistry'] = None
     ):
         self.name = name
         self.llm = llm
         self.system_prompt = system_prompt
         self.config = config or Config()
         self._history: list[Message] = []
+        self.tool_registry = tool_registry
     
     @abstractmethod
     def run(self, input_text: str, **kwargs) -> str:
