@@ -1,6 +1,8 @@
 import os
 from typing import Literal, Optional, Iterator
 from openai import OpenAI
+from .exceptions import LingyeAgentsException
+
 
 SUPPORTED_PROVIDERS = os.getenv("SUPPORTED_PROVIDERS", "openai,aihubmix,deepseek,qwen,modelscope,kimi,zhipu,ollama,vllm,local").split(",")
 
