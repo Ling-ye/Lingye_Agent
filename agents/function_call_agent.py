@@ -352,7 +352,10 @@ class FunctionCallAgent(Agent):
         if func:
             try:
                 input_text = arguments.get("input", "")
-                return func(input_text)
+                output = func(input_text)
+                print(f"[Debug]调用工具输入的结果为：{input_text}")
+                print(f"[Debug]调用工具输出的结果为：{output}")
+                return output
             except Exception as exc:
                 return f"❌ 工具调用失败：{exc}"
 
