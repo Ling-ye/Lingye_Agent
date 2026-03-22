@@ -5,6 +5,16 @@ import inspect
 import re
 
 
+
+class ToolParameter(BaseModel):
+    """工具参数定义"""
+    name: str
+    type: str
+    description: str
+    required: bool = True
+    default: Any = None
+
+
 class Tool(ABC):
     """工具基类"""
 
@@ -71,13 +81,6 @@ class Tool(ABC):
         }
 
 
-class ToolParameter(BaseModel):
-    """工具参数定义"""
-    name: str
-    type: str
-    description: str
-    required: bool = True
-    default: Any = None
 
 
 
