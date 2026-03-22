@@ -38,6 +38,20 @@ def _build_registry_search_and_calc() -> ToolRegistry:
     return registry
 
 
+def _build_registry_parallel_execution_sample() -> ToolRegistry:
+    """
+    对应 tools/async_executor.py 里 test_parallel_execution 所假设的注册表
+    （advanced_search + simple_calculator）；示例源码里未注册，在测试中补齐。
+    """
+    registry = create_advanced_search_registry()
+    registry.register_function(
+        "simple_calculator",
+        "简单的数学计算工具，支持基本运算与 sqrt",
+        simple_calculate,
+    )
+    return registry
+
+
 async def _run_single_async():
     registry = _build_registry_minimal()
     executor = AsyncToolExecutor(registry, max_workers=2)
@@ -99,8 +113,40 @@ def test_parallel_search_and_calculate():
     asyncio.run(_run_parallel_search_and_calc())
 
 
+async def _run_parallel_execution_sample():
+    """
+    复现 tools/async_executor.test_parallel_execution 的任务列表与执行方式；
+    不调用该模块内函数（示例中 registry 为空），此处使用完整注册表以便断言。
+    """
+    registry = _build_registry_parallel_execution_sample()
+    executor = AsyncToolExecutor(registry)
+    tasks = [
+        {"tool_name": "advanced_search", "input_data": "Python编程"},
+        {"tool_name": "advanced_search", "input_data": "机器学习"},
+        {"tool_name": "simple_calculator", "input_data": "2 + 2"},
+        {"tool_name": "simple_calculator", "input_data": "sqrt(16)"},
+    ]
+    results = await executor.execute_tools_parallel(tasks)
+    assert len(results) == 4
+    assert len(results[0].strip()) > 0
+    assert len(results[1].strip()) > 0
+    assert results[2].strip() == "4"
+    assert results[3].strip() == "4.0"
+
+    print("\n========== 与 async_executor.test_parallel_execution 同构的并行结果 ==========\n")
+    for i, r in enumerate(results, 1):
+        preview = r[:120] + ("..." if len(r) > 120 else "")
+        print(f"任务 {i}: {preview}")
+
+
+def test_parallel_execution_sample():
+    """覆盖 tools/async_executor.py 中 test_parallel_execution 示例的行为（任务与工具名一致）。"""
+    asyncio.run(_run_parallel_execution_sample())
+
+
 if __name__ == "__main__":
-    test_execute_tool_async()
-    test_execute_tools_parallel()
-    test_parallel_search_and_calculate()
+    # test_execute_tool_async()
+    # test_execute_tools_parallel()
+    # test_parallel_search_and_calculate()
+    test_parallel_execution_sample()
     print("test_async_executor: 全部通过")
