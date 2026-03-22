@@ -53,7 +53,7 @@ def create_calculator_registry():
 
     # 注册计算器函数
     registry.register_function(
-        name="my_calculator",
+        name="simple_calculate",
         description="简单的数学计算工具，支持基本运算(+,-,*,/)和sqrt函数",
         func=simple_calculate
     )

@@ -32,7 +32,7 @@ def test_calculator_tool():
 
     for i, expression in enumerate(test_cases, 1):
         print(f"测试 {i}: {expression}")
-        result = registry.execute_tool("my_calculator", expression)
+        result = registry.execute_tool("simple_calculate", expression)
         print(f"结果: {result}\n")
 
 def test_with_simple_agent():
@@ -45,23 +45,21 @@ def test_with_simple_agent():
     # 创建包含计算器的注册表
     registry = create_calculator_registry()
 
-    print("🤖 与SimpleAgent集成测试:")
+    print("与SimpleAgent集成测试:")
 
     # 模拟SimpleAgent使用工具的场景
     user_question = "请帮我计算 sqrt(16) + 2 * 3"
-
     print(f"用户问题: {user_question}")
 
     # 使用工具计算
-    calc_result = registry.execute_tool("my_calculator", "sqrt(16) + 2 * 3")
-    print(f"计算结果: {calc_result}")
+    calc_result = registry.execute_tool("simple_calculate", "sqrt(16) + 2 * 3")
 
     # 构建最终回答
     final_messages = [
         {"role": "user", "content": f"计算结果是 {calc_result}，请用自然语言回答用户的问题:{user_question}"}
     ]
-
-    print("\n🎯 SimpleAgent的回答:")
+    print(f"\n构建最终回答:{final_messages}")
+    print("\nSimpleAgent的回答:")
     response = llm.think(final_messages)
     for chunk in response:
         print(chunk, end="", flush=True)
