@@ -1,6 +1,5 @@
 """记忆系统基础类和配置
 
-按照第8章架构设计的基础组件：
 - MemoryItem: 记忆项数据结构
 - MemoryConfig: 记忆系统配置
 - BaseMemory: 记忆基类

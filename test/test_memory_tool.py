@@ -19,8 +19,8 @@ def memory_tool_execute_demo():
     # 初始化MemoryTool
     memory_tool = MemoryTool(
         user_id="demo_user",
-        # memory_types=["working", "episodic", "semantic", "perceptual"]
-        memory_types=["working"]
+        memory_types=["working", "episodic", "semantic", "perceptual"]
+        # memory_types=["working"]
     )
     
     print("✅ MemoryTool初始化完成")
