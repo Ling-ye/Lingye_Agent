@@ -20,7 +20,7 @@ class MemoryTool(Tool):
         
         # 初始化记忆管理器
         self.memory_config = memory_config or MemoryConfig()
-        self.memory_types = memory_types or ["working", "episodic", "semantic"]
+        self.memory_types = memory_types or ["working", "episodic", "semantic", "perceptual"]
         
         self.memory_manager = MemoryManager(
             config=self.memory_config,
