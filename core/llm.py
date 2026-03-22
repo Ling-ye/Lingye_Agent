@@ -277,6 +277,8 @@ class LingyeLLM:
             # 处理流式响应
             print("✅ 大语言模型响应成功:")
             for chunk in response:
+                if not chunk.choices: # 避免空chunk导致chunk.choices[0] crash
+                    continue
                 content = chunk.choices[0].delta.content or ""
                 if content:
                     print(content, end="", flush=True)
