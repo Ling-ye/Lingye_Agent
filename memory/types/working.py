@@ -11,7 +11,7 @@ class WorkingMemory:
     
     def __init__(self, config: MemoryConfig):
         self.max_capacity = config.working_memory_capacity or 50
-        self.max_age_minutes = config.working_memory_ttl or 60
+        self.max_age_minutes = config.working_memory_ttl_minutes or 60
         self.memories = []
     
     def add(self, memory_item: MemoryItem) -> str:
