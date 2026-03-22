@@ -47,3 +47,34 @@ class ToolRegistry:
             descriptions.append(f"- {name}: {info['description']}")
 
         return "\n".join(descriptions) if descriptions else "暂无可用工具"
+
+    def execute_tool(self, name: str, input_text: str) -> str:
+            """
+            执行工具
+
+            Args:
+                name: 工具名称
+                input_text: 输入参数
+
+            Returns:
+                工具执行结果
+            """
+            # 优先查找Tool对象
+            if name in self._tools:
+                tool = self._tools[name]
+                try:
+                    # 简化参数传递，直接传入字符串
+                    return tool.run({"input": input_text})
+                except Exception as e:
+                    return f"错误：执行工具 '{name}' 时发生异常: {str(e)}"
+
+            # 查找函数工具
+            elif name in self._functions:
+                func = self._functions[name]["func"]
+                try:
+                    return func(input_text)
+                except Exception as e:
+                    return f"错误：执行工具 '{name}' 时发生异常: {str(e)}"
+
+            else:
+                return f"错误：未找到名为 '{name}' 的工具。"
