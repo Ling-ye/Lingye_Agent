@@ -183,29 +183,97 @@ class DashScopeEmbedding(EmbeddingModel):
             inputs = list(texts)
             single = False
 
-        # REST 模式（OpenAI兼容）
+        # REST 模式（自动兼容 OpenAI / DashScope）
+        print(f"[debug] base_url:{self.base_url}")
+
         if self.base_url:
             import requests
-            url = self.base_url.rstrip("/") + "/embeddings"
+
             headers = {
                 "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
                 "Content-Type": "application/json",
             }
-            payload = {"model": self.model_name, "input": inputs}
-            resp = requests.post(url, headers=headers, json=payload, timeout=30)
-            if resp.status_code >= 400:
-                raise RuntimeError(f"Embedding REST 调用失败: {resp.status_code} {resp.text}")
-            data = resp.json()
-            # 期望结构：{"data": [{"embedding": [...]}]}
-            items = data.get("data") or []
-            vecs = [np.array(item.get("embedding")) for item in items]
-            if single:
-                return vecs[0]
-            return vecs
+
+            # =========================
+            # 尝试 OpenAI 兼容格式
+            # =========================
+            try:
+                url = self.base_url.rstrip("/") + "/embeddings"
+                payload = {
+                    "model": self.model_name,
+                    "input": inputs
+                }
+
+                print(f"[debug][OpenAI] url:{url}")
+                print(f"[debug][OpenAI] payload:{payload}")
+
+                resp = requests.post(url, headers=headers, json=payload, timeout=30)
+
+                if resp.status_code < 400:
+                    data = resp.json()
+                    items = data.get("data") or []
+
+                    vecs = [np.array(item.get("embedding")) for item in items]
+
+                    if vecs:
+                        print("[Embedding] OpenAI REST 成功")
+                        return vecs[0] if single else vecs
+
+                    raise RuntimeError("OpenAI 返回为空")
+
+                else:
+                    raise RuntimeError(f"{resp.status_code} {resp.text}")
+
+            except Exception as e:
+                print(f"[Embedding] OpenAI 格式失败: {e}")
+
+            # =========================
+            # fallback → DashScope 格式
+            # =========================
+            try:
+                url = self.base_url.rstrip("/") + "/services/embeddings/text-embedding/text-embedding"
+
+                payload = {
+                    "model": self.model_name,
+                    "input": {
+                        "texts": inputs
+                    }
+                }
+
+                print(f"[debug][DashScope] url:{url}")
+                print(f"[debug][DashScope] payload:{payload}")
+
+                resp = requests.post(url, headers=headers, json=payload, timeout=30)
+
+                if resp.status_code < 400:
+                    data = resp.json()
+
+                    embeddings = data.get("output", {}).get("embeddings", [])
+
+                    vecs = [
+                        np.array(item.get("embedding") or item.get("vector"))
+                        for item in embeddings
+                    ]
+
+                    if vecs:
+                        print("[Embedding] DashScope REST 成功")
+                        return vecs[0] if single else vecs
+
+                    raise RuntimeError("DashScope 返回为空")
+
+                else:
+                    raise RuntimeError(f"{resp.status_code} {resp.text}")
+
+            except Exception as e:
+                print(f"[Embedding] DashScope 格式失败: {e}")
+
+                raise RuntimeError("Embedding REST 两种格式全部失败")
 
         # SDK 模式
         from dashscope import TextEmbedding
+        print(f"[debug] inputs:{inputs}")
         rsp = TextEmbedding.call(model=self.model_name, input=inputs)
+        print(f"[debug] rsp:{rsp}")
         embeddings_obj = None
         if isinstance(rsp, dict):
             embeddings_obj = (rsp.get("output") or {}).get("embeddings")
@@ -236,6 +304,7 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
     if model_type in ("local", "sentence_transformer", "huggingface"):
         return LocalTransformerEmbedding(**kwargs)
     elif model_type == "dashscope":
+        print(f"[debug] kwargs：{kwargs}")
         return DashScopeEmbedding(**kwargs)
     elif model_type == "tfidf":
         return TFIDFEmbedding(**kwargs)
