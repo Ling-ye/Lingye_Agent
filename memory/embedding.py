@@ -255,9 +255,16 @@ def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kw
         fallback.insert(0, preferred_type)
     for t in fallback:
         try:
-            return create_embedding_model(t, **kwargs)
-        except Exception:
-            continue
+        #     return create_embedding_model(t, **kwargs)
+        # except Exception:
+        #     continue
+            print(f"[Embedding] 尝试加载: {t}")
+            model = create_embedding_model(t, **kwargs)
+            print(f"[Embedding] 成功: {t}")
+            return model
+        except Exception as e:
+            print(f"[Embedding] 失败: {t}, error={e}")
+            last_error = e
     raise RuntimeError("所有嵌入模型都不可用，请安装依赖或检查配置")
 
 
