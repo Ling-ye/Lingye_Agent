@@ -245,6 +245,7 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
 
 def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kwargs) -> EmbeddingModel:
     """带回退的创建：dashscope -> local -> tfidf"""
+    print(f"[debug] preferred_type:{preferred_type}")
     if preferred_type in ("sentence_transformer", "huggingface"):
         preferred_type = "local"
     fallback = ["dashscope", "local", "tfidf"]
@@ -311,4 +312,5 @@ def refresh_embedder() -> EmbeddingModel:
     with _lock:
         _embedder = _build_embedder()
         return _embedder
+
 

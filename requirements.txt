@@ -5,5 +5,5 @@ neo4j
 scikit-learn
 numpy
 
-#可选
 sentence-transformers
+dashscope
