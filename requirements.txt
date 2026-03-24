@@ -3,3 +3,7 @@ python-dotenv
 qdrant_client
 neo4j
 scikit-learn
+numpy
+
+#可选
+sentence-transformers
