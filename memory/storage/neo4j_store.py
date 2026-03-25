@@ -72,6 +72,7 @@ class Neo4jGraphStore:
                 **config
             )
             
+            print(f"[debug] config:{config}")
             # 验证连接
             self.driver.verify_connectivity()
             

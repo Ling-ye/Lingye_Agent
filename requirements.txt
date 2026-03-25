@@ -1,3 +1,4 @@
+requests
 openai
 python-dotenv
 qdrant_client
@@ -7,3 +8,5 @@ numpy
 
 sentence-transformers
 dashscope
+qdrant-client>=1.6.0
+neo4j>=5.0.0
