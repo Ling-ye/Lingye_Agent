@@ -137,41 +137,44 @@ class SemanticMemory(BaseMemory):
             raise
     
     def _init_databases(self):
-        """初始化专业数据库存储"""
+        """初始化专业数据库存储（支持部分降级运行）"""
+        from ...core.database_config import get_database_config
+        db_config = get_database_config()
+        
+        # 初始化Qdrant向量数据库（核心组件，失败则抛出异常）
         try:
-            from ...core.database_config import get_database_config
-            # 获取数据库配置
-            db_config = get_database_config()
-            
-            # 初始化Qdrant向量数据库（使用连接管理器避免重复连接）
             from ..storage.qdrant_store import QdrantConnectionManager
             qdrant_config = db_config.get_qdrant_config() or {}
             qdrant_config["vector_size"] = get_dimension()
             self.vector_store = QdrantConnectionManager.get_instance(**qdrant_config)
             logger.info("✅ Qdrant向量数据库初始化完成")
-            
-            # 初始化Neo4j图数据库
+        except Exception as e:
+            logger.error(f"❌ Qdrant向量数据库初始化失败: {e}")
+            logger.info("💡 请检查Qdrant配置和网络连接")
+            raise
+        
+        # 初始化Neo4j图数据库（可选组件，失败则降级运行）
+        try:
             from ..storage.neo4j_store import Neo4jGraphStore
             neo4j_config = db_config.get_neo4j_config()
             self.graph_store = Neo4jGraphStore(**neo4j_config)
             logger.info("✅ Neo4j图数据库初始化完成")
-            
-            # 验证连接
-            vector_health = self.vector_store.health_check()
-            graph_health = self.graph_store.health_check()
-            
-            if not vector_health:
-                logger.warning("⚠️ Qdrant连接异常，部分功能可能受限")
-            if not graph_health:
-                logger.warning("⚠️ Neo4j连接异常，图搜索功能可能受限")
-            
-            logger.info(f"🏥 数据库健康状态: Qdrant={'✅' if vector_health else '❌'}, Neo4j={'✅' if graph_health else '❌'}")
-            
         except Exception as e:
-            logger.error(f"❌ 数据库初始化失败: {e}")
-            logger.info("💡 请检查数据库配置和网络连接")
-            logger.info("💡 参考 DATABASE_SETUP_GUIDE.md 进行配置")
-            raise
+            self.graph_store = None
+            logger.warning(f"⚠️ Neo4j图数据库不可用，将以降级模式运行（仅向量搜索）: {e}")
+            logger.info("💡 图搜索功能已禁用，其他功能正常可用")
+        
+        # 验证连接健康状态
+        vector_health = self.vector_store.health_check() if self.vector_store else False
+        graph_health = self.graph_store.health_check() if self.graph_store else False
+        
+        if not vector_health:
+            logger.warning("⚠️ Qdrant连接异常，部分功能可能受限")
+        if self.graph_store and not graph_health:
+            logger.warning("⚠️ Neo4j连接异常，图搜索功能可能受限")
+        
+        neo4j_status = '✅' if graph_health else ('⚠️ 降级' if not self.graph_store else '❌')
+        logger.info(f"🏥 数据库健康状态: Qdrant={'✅' if vector_health else '❌'}, Neo4j={neo4j_status}")
     
     def _init_nlp(self):
         """初始化NLP处理器 - 智能多语言支持"""
@@ -381,6 +384,9 @@ class SemanticMemory(BaseMemory):
 
     def _graph_search(self, query: str, limit: int, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Neo4j图搜索"""
+        if not self.graph_store:
+            logger.debug("⚠️ Neo4j不可用，跳过图搜索")
+            return []
         try:
             # 从查询中提取实体
             query_entities = self._extract_entities(query)
@@ -743,6 +749,8 @@ class SemanticMemory(BaseMemory):
     
     def _add_entity_to_graph(self, entity: Entity, memory_item: MemoryItem):
         """添加实体到Neo4j图数据库"""
+        if not self.graph_store:
+            return False
         try:
             # 准备实体属性
             properties = {
@@ -779,6 +787,8 @@ class SemanticMemory(BaseMemory):
     
     def _add_relation_to_graph(self, relation: Relation, memory_item: MemoryItem):
         """添加关系到Neo4j图数据库"""
+        if not self.graph_store:
+            return False
         try:
             # 准备关系属性
             properties = {

@@ -45,7 +45,11 @@ class MemoryManager:
             self.memory_types['episodic'] = EpisodicMemory(self.config)
             
         if enable_semantic:
-            self.memory_types['semantic'] = SemanticMemory(self.config)
+            try:
+                self.memory_types['semantic'] = SemanticMemory(self.config)
+            except Exception as e:
+                logger.warning(f"⚠️ 语义记忆初始化失败，将跳过语义记忆功能: {e}")
+                logger.info("💡 其他记忆类型（工作记忆、情景记忆、感知记忆）仍然可用")
             
         if enable_perceptual:
             self.memory_types['perceptual'] = PerceptualMemory(self.config)
