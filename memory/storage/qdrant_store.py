@@ -506,10 +506,14 @@ class QdrantVectorStore:
         """
         try:
             collection_info = self.client.get_collection(self.collection_name)
-            
+            # qdrant-client>=1.17: CollectionInfo 无 vectors_count，用 points_count
+            vectors_count = getattr(collection_info, "vectors_count", None)
+            if vectors_count is None:
+                vectors_count = collection_info.points_count
+
             info = {
                 "name": self.collection_name,
-                "vectors_count": collection_info.vectors_count,
+                "vectors_count": vectors_count,
                 "indexed_vectors_count": collection_info.indexed_vectors_count,
                 "points_count": collection_info.points_count,
                 "segments_count": collection_info.segments_count,
