@@ -334,7 +334,7 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
     if model_type in ("local", "sentence_transformer", "huggingface"):
         return LocalTransformerEmbedding(**kwargs)
     elif model_type == "dashscope":
-        print(f"[debug] kwargs：{kwargs}")
+        # print(f"[debug] kwargs：{kwargs}")
         return DashScopeEmbedding(**kwargs)
     elif model_type == "tfidf":
         return TFIDFEmbedding(**kwargs)
