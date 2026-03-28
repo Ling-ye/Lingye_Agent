@@ -484,6 +484,30 @@ def _create_default_vector_store(dimension: int = None) -> QdrantVectorStore:
 # Cache functions removed - using unified embedder with internal caching
 
 
+def _normalize_embedder_batch_output(part_vecs) -> List:
+    """将 embedder.encode(批量文本) 的返回值统一为 list[list]，避免 ndarray 列表被误判为「单向量」。"""
+    if not isinstance(part_vecs, list):
+        if hasattr(part_vecs, "tolist"):
+            return [part_vecs.tolist()]
+        return [list(part_vecs)]
+    if not part_vecs:
+        return []
+    first = part_vecs[0]
+    if not isinstance(first, (list, tuple)) and hasattr(first, "__len__"):
+        normalized = []
+        for v in part_vecs:
+            if hasattr(v, "tolist"):
+                normalized.append(v.tolist())
+            else:
+                normalized.append(list(v))
+        return normalized
+    if not isinstance(first, (list, tuple)):
+        if hasattr(part_vecs, "tolist"):
+            return [part_vecs.tolist()]
+        return [list(part_vecs)]
+    return part_vecs
+
+
 def index_chunks(
     store = None, 
     chunks: List[Dict] = None, 
@@ -523,32 +547,7 @@ def index_chunks(
         part = processed_texts[i:i+batch_size]
         try:
             # Use unified embedder directly (handles caching internally)
-            part_vecs = embedder.encode(part)
-            
-            # Normalize to List[List[float]]
-            if not isinstance(part_vecs, list):
-                # 单个numpy数组转为列表中的列表
-                if hasattr(part_vecs, "tolist"):
-                    part_vecs = [part_vecs.tolist()]
-                else:
-                    part_vecs = [list(part_vecs)]
-            else:
-                # 检查是否是嵌套列表
-                if part_vecs and not isinstance(part_vecs[0], (list, tuple)) and hasattr(part_vecs[0], "__len__"):
-                    # numpy数组列表 -> 转换每个数组
-                    normalized_vecs = []
-                    for v in part_vecs:
-                        if hasattr(v, "tolist"):
-                            normalized_vecs.append(v.tolist())
-                        else:
-                            normalized_vecs.append(list(v))
-                    part_vecs = normalized_vecs
-                elif part_vecs and not isinstance(part_vecs[0], (list, tuple)):
-                    # 单个向量被误判为列表，实际应该包装成[[...]]
-                    if hasattr(part_vecs, "tolist"):
-                        part_vecs = [part_vecs.tolist()]
-                    else:
-                        part_vecs = [list(part_vecs)]
+            part_vecs = _normalize_embedder_batch_output(embedder.encode(part))
             
             for v in part_vecs:
                 try:
@@ -574,20 +573,15 @@ def index_chunks(
             
             # 尝试重试：将批次分解为更小的块
             success = False
-            for j in range(0, len(part), 8):  # 更小的批次
+            for j in range(0, len(part), 8):  # 更小的批次（DashScope 单请求上限 10，8 为安全值）
                 small_part = part[j:j+8]
                 try:
                     import time
                     time.sleep(2)  # 等待2秒避免频率限制
                     
-                    small_vecs = embedder.encode(small_part)
-                    # Normalize to List[List[float]]
-                    if isinstance(small_vecs, list) and small_vecs and not isinstance(small_vecs[0], list):
-                        small_vecs = [small_vecs]
+                    small_vecs = _normalize_embedder_batch_output(embedder.encode(small_part))
                     
                     for v in small_vecs:
-                        if hasattr(v, "tolist"):
-                            v = v.tolist()
                         try:
                             v_norm = [float(x) for x in v]
                             if len(v_norm) != dimension:

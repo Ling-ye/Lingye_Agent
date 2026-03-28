@@ -254,37 +254,45 @@ class DashScopeEmbedding(EmbeddingModel):
             # =========================
             try:
                 url = self.base_url.rstrip("/") + "/services/embeddings/text-embedding/text-embedding"
+                # DashScope 单次 texts 条数上限为 10（见 InvalidParameter batch size）
+                max_batch = int(os.getenv("DASHSCOPE_EMBED_BATCH_SIZE", "10"))
+                max_batch = max(1, min(max_batch, 10))
 
-                payload = {
-                    "model": self.model_name,
-                    "input": {
-                        "texts": inputs
+                all_vecs: List[np.ndarray] = []
+                for start in range(0, len(inputs), max_batch):
+                    sub = inputs[start : start + max_batch]
+                    payload = {
+                        "model": self.model_name,
+                        "input": {
+                            "texts": sub
+                        }
                     }
-                }
 
-                print(f"[debug][DashScope] url:{url}")
-                print(f"[debug][DashScope] payload:{payload}")
+                    print(f"[debug][DashScope] url:{url}")
+                    print(f"[debug][DashScope] payload batch {start // max_batch + 1}: n={len(sub)}")
 
-                resp = requests.post(url, headers=headers, json=payload, timeout=30)
+                    resp = requests.post(url, headers=headers, json=payload, timeout=30)
 
-                if resp.status_code < 400:
-                    data = resp.json()
+                    if resp.status_code < 400:
+                        data = resp.json()
+                        embeddings = data.get("output", {}).get("embeddings", [])
+                        batch_vecs = [
+                            np.array(item.get("embedding") or item.get("vector"))
+                            for item in embeddings
+                        ]
+                        if len(batch_vecs) != len(sub):
+                            raise RuntimeError(
+                                f"DashScope 返回条数与请求不一致: 请求{len(sub)} 返回{len(batch_vecs)}"
+                            )
+                        all_vecs.extend(batch_vecs)
+                    else:
+                        raise RuntimeError(f"{resp.status_code} {resp.text}")
 
-                    embeddings = data.get("output", {}).get("embeddings", [])
+                if all_vecs:
+                    print("[Embedding] DashScope REST 成功")
+                    return all_vecs[0] if single else all_vecs
 
-                    vecs = [
-                        np.array(item.get("embedding") or item.get("vector"))
-                        for item in embeddings
-                    ]
-
-                    if vecs:
-                        print("[Embedding] DashScope REST 成功")
-                        return vecs[0] if single else vecs
-
-                    raise RuntimeError("DashScope 返回为空")
-
-                else:
-                    raise RuntimeError(f"{resp.status_code} {resp.text}")
+                raise RuntimeError("DashScope 返回为空")
 
             except Exception as e:
                 print(f"[Embedding] DashScope 格式失败: {e}")
