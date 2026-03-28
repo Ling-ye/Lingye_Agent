@@ -26,6 +26,40 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _env_truthy(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _qdrant_client_network_kwargs() -> Dict[str, Any]:
+    """
+    从环境变量读取 Qdrant 网络相关参数，缓解代理/SSL 问题（如 UNEXPECTED_EOF_WHILE_READING）。
+
+    - QDRANT_PREFER_GRPC: 设为 1 时使用 gRPC（默认关闭；多数 HTTP 代理与 gRPC 不兼容）。
+    - QDRANT_HTTP_TRUST_ENV: 设为 0 时 httpx 不读取 HTTP_PROXY/HTTPS_PROXY（Qdrant 可走直连或规则分流）。
+    - QDRANT_REST_DISABLE_KEEPALIVE: 设为 1 时禁用 REST 长连接，部分代理会错误断开 keep-alive。
+    - QDRANT_CHECK_COMPATIBILITY: 设为 0 时跳过客户端与服务端版本检查线程。
+    """
+    kw: Dict[str, Any] = {}
+    kw["prefer_grpc"] = _env_truthy("QDRANT_PREFER_GRPC", default=False)
+    if not _env_truthy("QDRANT_CHECK_COMPATIBILITY", default=True):
+        kw["check_compatibility"] = False
+    if not _env_truthy("QDRANT_HTTP_TRUST_ENV", default=True):
+        kw["trust_env"] = False
+        logger.info("Qdrant REST 使用 trust_env=False（忽略 HTTP(S)_PROXY 环境变量）")
+    if _env_truthy("QDRANT_REST_DISABLE_KEEPALIVE", default=False):
+        try:
+            import httpx
+            kw["limits"] = httpx.Limits(max_connections=None, max_keepalive_connections=0)
+            logger.info("Qdrant REST 已禁用 keep-alive（QDRANT_REST_DISABLE_KEEPALIVE=1）")
+        except ImportError:
+            pass
+    return kw
+
+
 class QdrantConnectionManager:
     """Qdrant连接管理器 - 防止重复连接和初始化"""
     _instances = {}  # key: (url, collection_name) -> QdrantVectorStore instance
@@ -131,20 +165,23 @@ class QdrantVectorStore:
     def _initialize_client(self):
         """初始化Qdrant客户端和集合"""
         try:
+            net_kw = _qdrant_client_network_kwargs()
             # 根据配置创建客户端连接
             if self.url and self.api_key:
                 # 使用云服务API
                 self.client = QdrantClient(
                     url=self.url,
                     api_key=self.api_key,
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    **net_kw,
                 )
                 logger.info(f"✅ 成功连接到Qdrant云服务: {self.url}")
             elif self.url:
                 # 使用自定义URL（无API密钥）
                 self.client = QdrantClient(
                     url=self.url,
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    **net_kw,
                 )
                 logger.info(f"✅ 成功连接到Qdrant服务: {self.url}")
             else:
@@ -152,7 +189,8 @@ class QdrantVectorStore:
                 self.client = QdrantClient(
                     host="localhost",
                     port=6333,
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    **net_kw,
                 )
                 logger.info("✅ 成功连接到本地Qdrant服务: localhost:6333")
             
@@ -169,6 +207,11 @@ class QdrantVectorStore:
                 logger.info("💡 或启动本地服务: docker run -p 6333:6333 qdrant/qdrant")
             else:
                 logger.info("💡 请检查URL和API密钥是否正确")
+                logger.info(
+                    "💡 若开启系统/环境代理后出现 SSL EOF：可在 .env 设置 "
+                    "QDRANT_HTTP_TRUST_ENV=0（直连 Qdrant）或 QDRANT_REST_DISABLE_KEEPALIVE=1；"
+                    "或在代理中将 *.qdrant.io 设为直连（NO_PROXY）"
+                )
             raise
     
     def _ensure_collection(self):
