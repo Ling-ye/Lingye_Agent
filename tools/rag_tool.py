@@ -556,9 +556,24 @@ class RAGTool(Tool):
             ]
             
             # 5. 调用 LLM 生成答案
-            logger.info("RAG ask: 调用 LLM 根据上下文生成最终回答…")
+            logger.info("RAG ask: 调用 LLM 根据上下文生成最终回答（流式拉取，拼接为完整答案）…")
             llm_start = time.time()
-            answer = self.llm.invoke(enhanced_prompt)
+            # answer = self.llm.invoke(enhanced_prompt) # 非流式请求有点慢，还容易挂
+            # 流式请求：与 invoke 最终字符串一致；Gradio 等仍只在 _ask 返回后一次性更新，真·逐字 UI 需上层 yield + 流式组件
+            answer_parts: List[str] = []
+            chunk_index = 0
+            for chunk in self.llm.stream_invoke(enhanced_prompt):
+                if not chunk:
+                    continue
+                chunk_index += 1
+                answer_parts.append(chunk)
+                logger.info(
+                    "RAG ask: LLM 流式块 #%d | 长度=%d | 内容=%r",
+                    chunk_index,
+                    len(chunk),
+                    chunk,
+                )
+            answer = "".join(answer_parts)
             llm_time = int((time.time() - llm_start) * 1000)
             logger.info("RAG ask: LLM 生成完成 %dms", llm_time)
             

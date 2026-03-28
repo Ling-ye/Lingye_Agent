@@ -252,7 +252,12 @@ class LingyeLLM:
             else:
                 return "gpt-3.5-turbo"
 
-    def think(self, messages: list[dict[str, str]], temperature: Optional[float] = None) -> Iterator[str]:
+    def think(
+        self,
+        messages: list[dict[str, str]],
+        temperature: Optional[float] = None,
+        verbose: bool = True,
+    ) -> Iterator[str]:
         """
         调用大语言模型进行思考，并返回流式响应。
         这是主要的调用方法，默认使用流式响应以获得更好的用户体验。
@@ -260,11 +265,14 @@ class LingyeLLM:
         Args:
             messages: 消息列表
             temperature: 温度参数，如果未提供则使用初始化时的值
+            verbose: 为 True 时在终端打印进度与每个文本片段（适合脚本调试）；
+                为 False 时仅 yield 片段，供上层自行展示（如 Gradio / Agent 流式输出）。
 
         Yields:
             str: 流式响应的文本片段
         """
-        print(f"🧠 正在调用 {self.model} 模型...")
+        if verbose:
+            print(f"🧠 正在调用 {self.model} 模型...")
         try:
             response = self._client.chat.completions.create(
                 model=self.model,
@@ -275,15 +283,18 @@ class LingyeLLM:
             )
 
             # 处理流式响应
-            print("✅ 大语言模型响应成功:")
+            if verbose:
+                print("✅ 大语言模型响应成功:")
             for chunk in response:
                 if not chunk.choices: # 避免空chunk导致chunk.choices[0] crash
                     continue
                 content = chunk.choices[0].delta.content or ""
                 if content:
-                    print(content, end="", flush=True)
+                    if verbose:
+                        print(content, end="", flush=True)
                     yield content
-            print()  # 在流式输出结束后换行
+            if verbose:
+                print()  # 在流式输出结束后换行
 
         except Exception as e:
             print(f"❌ 调用LLM API时发生错误: {e}")
@@ -308,8 +319,9 @@ class LingyeLLM:
 
     def stream_invoke(self, messages: list[dict[str, str]], **kwargs) -> Iterator[str]:
         """
-        流式调用LLM的别名方法，与think方法功能相同。
-        保持向后兼容性。
+        流式调用 LLM，默认不向终端 echo 片段（由调用方消费迭代器）。
+        传入 verbose=True 可与 think() 默认行为一致（终端打印进度与内容）。
         """
         temperature = kwargs.get('temperature')
-        yield from self.think(messages, temperature)
+        verbose = bool(kwargs.get('verbose', False))
+        yield from self.think(messages, temperature, verbose=verbose)
