@@ -1,9 +1,12 @@
 from typing import List, Dict, Optional, Any
+import logging
 import os
 import hashlib
 import sqlite3
 import time
 import json
+
+logger = logging.getLogger(__name__)
 from ..embedding import get_text_embedder, get_dimension
 from ..storage.qdrant_store import QdrantVectorStore
 
@@ -756,20 +759,42 @@ def search_vectors_expanded(
     """
     if not query:
         return []
-    
+
     # Create default store if not provided
     if store is None:
         store = _create_default_vector_store()
-    
+
+    logger.info(
+        "RAG search_expanded: 开始 top_k=%s mqe=%s hyde=%s mqe_n=%s",
+        top_k,
+        enable_mqe,
+        enable_hyde,
+        mqe_expansions,
+    )
+
     # expansions
     expansions: List[str] = [query]
-    
+
     if enable_mqe and mqe_expansions > 0:
+        t0 = time.perf_counter()
+        logger.info("RAG search_expanded: MQE — 调用 LLM 生成查询扩展…")
         expansions.extend(_prompt_mqe(query, mqe_expansions))
+        logger.info(
+            "RAG search_expanded: MQE — 完成 %.0fms (当前变体数=%d)",
+            (time.perf_counter() - t0) * 1000,
+            len(expansions),
+        )
     if enable_hyde:
+        t0 = time.perf_counter()
+        logger.info("RAG search_expanded: HyDE — 调用 LLM 生成假设文档…")
         hyde_text = _prompt_hyde(query)
         if hyde_text:
             expansions.append(hyde_text)
+        logger.info(
+            "RAG search_expanded: HyDE — 完成 %.0fms (是否追加=%s)",
+            (time.perf_counter() - t0) * 1000,
+            bool(hyde_text),
+        )
 
     # unique and trim
     uniq: List[str] = []
@@ -790,16 +815,39 @@ def search_vectors_expanded(
     if rag_namespace:
         where["rag_namespace"] = rag_namespace
 
+    logger.info(
+        "RAG search_expanded: 向量检索 %d 路 | 每路召回上限=%d | pool=%d",
+        len(expansions),
+        per,
+        pool,
+    )
+
     # collect hits across expansions
     agg: Dict[str, Dict] = {}
-    for q in expansions:
+    t_vec_total = time.perf_counter()
+    for i, q in enumerate(expansions):
+        t_q = time.perf_counter()
         qv = embed_query(q)
         hits = store.search_similar(query_vector=qv, limit=per, score_threshold=score_threshold, where=where)
+        logger.info(
+            "RAG search_expanded: 变体 %d/%d embed+qdrant %.0fms | 本路命中=%d | 文本长度=%d",
+            i + 1,
+            len(expansions),
+            (time.perf_counter() - t_q) * 1000,
+            len(hits),
+            len(q),
+        )
         for h in hits:
             mid = h.get("metadata", {}).get("memory_id", h.get("id"))
             s = float(h.get("score", 0.0))
             if mid not in agg or s > float(agg[mid].get("score", 0.0)):
                 agg[mid] = h
+    logger.info(
+        "RAG search_expanded: 全部 embed+qdrant %.0fms | 去重后候选=%d → 返回 top_%d",
+        (time.perf_counter() - t_vec_total) * 1000,
+        len(agg),
+        top_k,
+    )
     # return top by score
     merged = list(agg.values())
     merged.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)

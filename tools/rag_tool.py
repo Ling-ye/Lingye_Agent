@@ -19,8 +19,11 @@ answer = rag.run({"action": "ask", "question": "什么是机器学习？"})
 """
 
 from typing import Dict, Any, List, Optional
+import logging
 import os
 import time
+
+logger = logging.getLogger(__name__)
 
 from ..tools.base import Tool, ToolParameter, tool_action
 from ..memory.rag.pipeline import create_rag_pipeline
@@ -464,12 +467,26 @@ class RAGTool(Tool):
 
             user_question = question.strip()
             print(f"🔍 智能问答: {user_question}")
-            
+            logger.info(
+                "RAG ask: 开始 | namespace=%s | question_preview=%s",
+                namespace,
+                (user_question[:120] + "…") if len(user_question) > 120 else user_question,
+            )
+
             # 1. 检索相关内容
+            t_pipe = time.perf_counter()
             pipeline = self._get_pipeline(namespace)
+            logger.info(
+                "RAG ask: 管道就绪 %.0fms (新建命名空间时可能较慢)",
+                (time.perf_counter() - t_pipe) * 1000,
+            )
+
             search_start = time.time()
-            
             if enable_advanced_search:
+                logger.info(
+                    "RAG ask: 高级检索 (MQE+HyDE+多路向量检索) top_k=%s",
+                    limit,
+                )
                 results = pipeline["search_advanced"](
                     query=user_question,
                     top_k=limit,
@@ -477,12 +494,18 @@ class RAGTool(Tool):
                     enable_hyde=True
                 )
             else:
+                logger.info("RAG ask: 基础检索 top_k=%s", limit)
                 results = pipeline["search"](
                     query=user_question,
                     top_k=limit
                 )
-            
+
             search_time = int((time.time() - search_start) * 1000)
+            logger.info(
+                "RAG ask: 检索结束 %dms | 命中片段数=%d",
+                search_time,
+                len(results) if results else 0,
+            )
             
             if not results:
                 return (
@@ -533,9 +556,11 @@ class RAGTool(Tool):
             ]
             
             # 5. 调用 LLM 生成答案
+            logger.info("RAG ask: 调用 LLM 根据上下文生成最终回答…")
             llm_start = time.time()
             answer = self.llm.invoke(enhanced_prompt)
             llm_time = int((time.time() - llm_start) * 1000)
+            logger.info("RAG ask: LLM 生成完成 %dms", llm_time)
             
             if not answer or not answer.strip():
                 return "❌ LLM未能生成有效答案，请稍后重试"
