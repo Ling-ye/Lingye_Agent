@@ -13,9 +13,28 @@
 """
 
 from typing import List, Union, Optional
+from urllib.parse import urlparse
 import threading
 import os
 import numpy as np
+
+
+def _embedding_base_url_is_openai_compatible(base_url: str) -> bool:
+    """判断 embedding 的 base_url 是否适合先走 OpenAI 形态 /embeddings。
+
+    https://dashscope.aliyuncs.com/api/v1 为 DashScope 原生 OpenAPI，无 OpenAI 兼容路由，返回 False。
+    """
+    try:
+        p = urlparse((base_url or "").strip())
+        if not p.scheme or not p.netloc:
+            return True
+        host = p.netloc.lower()
+        path = (p.path or "").rstrip("/") or "/"
+        if host == "dashscope.aliyuncs.com" and path == "/api/v1":
+            return False
+    except Exception:
+        pass
+    return True
 
 
 # ==============
@@ -194,41 +213,44 @@ class DashScopeEmbedding(EmbeddingModel):
                 "Content-Type": "application/json",
             }
 
-            # =========================
-            # 尝试 OpenAI 兼容格式
-            # =========================
-            try:
-                url = self.base_url.rstrip("/") + "/embeddings"
-                payload = {
-                    "model": self.model_name,
-                    "input": inputs
-                }
-
-                print(f"[debug][OpenAI] url:{url}")
-                print(f"[debug][OpenAI] payload:{payload}")
-
-                resp = requests.post(url, headers=headers, json=payload, timeout=30)
-
-                if resp.status_code < 400:
-                    data = resp.json()
-                    items = data.get("data") or []
-
-                    vecs = [np.array(item.get("embedding")) for item in items]
-
-                    if vecs:
-                        print("[Embedding] OpenAI REST 成功")
-                        return vecs[0] if single else vecs
-
-                    raise RuntimeError("OpenAI 返回为空")
-
-                else:
-                    raise RuntimeError(f"{resp.status_code} {resp.text}")
-
-            except Exception as e:
-                print(f"[Embedding] OpenAI 格式失败: {e}")
+            use_openai_first = _embedding_base_url_is_openai_compatible(self.base_url)
 
             # =========================
-            # fallback → DashScope 格式
+            # OpenAI 兼容格式（仅当 base_url 可能支持 /embeddings 时尝试，避免无效请求）
+            # =========================
+            if use_openai_first:
+                try:
+                    url = self.base_url.rstrip("/") + "/embeddings"
+                    payload = {
+                        "model": self.model_name,
+                        "input": inputs
+                    }
+
+                    print(f"[debug][OpenAI] url:{url}")
+                    print(f"[debug][OpenAI] payload:{payload}")
+
+                    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+
+                    if resp.status_code < 400:
+                        data = resp.json()
+                        items = data.get("data") or []
+
+                        vecs = [np.array(item.get("embedding")) for item in items]
+
+                        if vecs:
+                            print("[Embedding] OpenAI REST 成功")
+                            return vecs[0] if single else vecs
+
+                        raise RuntimeError("OpenAI 返回为空")
+
+                    else:
+                        raise RuntimeError(f"{resp.status_code} {resp.text}")
+
+                except Exception as e:
+                    print(f"[Embedding] OpenAI 格式失败: {e}")
+
+            # =========================
+            # DashScope 原生格式（非 OpenAI 兼容 base 时唯一路径；否则为 fallback）
             # =========================
             try:
                 url = self.base_url.rstrip("/") + "/services/embeddings/text-embedding/text-embedding"
