@@ -63,6 +63,15 @@ class LingyeLLM:
         3. 根据base_url判断
         4. 默认返回通用配置
         """
+        # 若已显式配置「远程」LLM_BASE_URL（如 OpenRouter），不要被模板里的 OLLAMA_HOST / VLLM_HOST 误判为本地栈
+        _raw_llm_base = (os.getenv("LLM_BASE_URL") or "").strip()
+        _llm_base_lower = _raw_llm_base.lower()
+        _prefer_explicit_llm_base = bool(_raw_llm_base) and (
+            "localhost" not in _llm_base_lower
+            and "127.0.0.1" not in _llm_base_lower
+            and ":11434" not in _llm_base_lower
+        )
+
         # 1. 检查特定提供商的环境变量
         if os.getenv("OPENAI_API_KEY"):
             return "openai"
@@ -78,9 +87,9 @@ class LingyeLLM:
             return "kimi"
         if os.getenv("ZHIPU_API_KEY") or os.getenv("GLM_API_KEY"):
             return "zhipu"
-        if os.getenv("OLLAMA_API_KEY") or os.getenv("OLLAMA_HOST"):
+        if (os.getenv("OLLAMA_API_KEY") or os.getenv("OLLAMA_HOST")) and not _prefer_explicit_llm_base:
             return "ollama"
-        if os.getenv("VLLM_API_KEY") or os.getenv("VLLM_HOST"):
+        if (os.getenv("VLLM_API_KEY") or os.getenv("VLLM_HOST")) and not _prefer_explicit_llm_base:
             return "vllm"
 
         # 2. 根据API密钥格式判断

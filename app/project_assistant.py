@@ -7,6 +7,9 @@ from ..tools.note_tool import NoteTool
 from ..core.message import Message
 from datetime import datetime
 from typing import List, Dict
+from dotenv import load_dotenv
+load_dotenv()
+
 
 class ProjectAssistant(SimpleAgent):
     """长期项目助手,集成 NoteTool 和 ContextBuilder"""
