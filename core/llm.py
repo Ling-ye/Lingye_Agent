@@ -29,13 +29,13 @@ class LingyeLLM:
             provider: LLM提供商，如果未提供则自动检测
             temperature: 温度参数
             max_tokens: 最大token数
-            timeout: 超时时间，从环境变量LLM_TIMEOUT读取，默认60秒
+            timeout: 超时时间，从环境变量LLM_TIMEOUT读取，默认180秒
         """
         # 优先使用传入参数，如果未提供，则从环境变量加载
         self.model = model or os.getenv("LLM_MODEL_ID")
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.timeout = timeout or int(os.getenv("LLM_TIMEOUT", "60"))
+        self.timeout = timeout or int(os.getenv("LLM_TIMEOUT", "180"))
         self.kwargs = kwargs
 
         # 自动检测provider或使用指定的provider
