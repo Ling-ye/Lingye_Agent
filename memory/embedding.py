@@ -329,17 +329,27 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
     """创建嵌入模型实例
 
     model_type: "dashscope" | "local" | "tfidf"
-    kwargs: model_name, api_key
+    kwargs: 可能含 model_name、api_key、base_url、max_features；按实现过滤，避免无关参数导致 TypeError。
     """
     if model_type in ("local", "sentence_transformer", "huggingface"):
-        return LocalTransformerEmbedding(**kwargs)
-    elif model_type == "dashscope":
-        # print(f"[debug] kwargs：{kwargs}")
-        return DashScopeEmbedding(**kwargs)
-    elif model_type == "tfidf":
-        return TFIDFEmbedding(**kwargs)
-    else:
-        raise ValueError(f"不支持的模型类型: {model_type}")
+        mn = kwargs.get("model_name")
+        local_kw = {"model_name": mn} if mn else {}
+        return LocalTransformerEmbedding(**local_kw)
+    if model_type == "dashscope":
+        ds_kw = {}
+        for k in ("model_name", "api_key", "base_url"):
+            v = kwargs.get(k)
+            if v is not None and v != "":
+                ds_kw[k] = v
+        return DashScopeEmbedding(**ds_kw)
+    if model_type == "tfidf":
+        tfidf_kw = (
+            {"max_features": kwargs["max_features"]}
+            if "max_features" in kwargs
+            else {}
+        )
+        return TFIDFEmbedding(**tfidf_kw)
+    raise ValueError(f"不支持的模型类型: {model_type}")
 
 
 def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kwargs) -> EmbeddingModel:
