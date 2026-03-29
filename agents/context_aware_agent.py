@@ -31,6 +31,7 @@ class ContextAwareAgent(SimpleAgent):
             conversation_history=self.conversation_history,
             system_instructions=self.system_prompt
         )
+        print(f"优化后的上下文：\n==========================================\n{optimized_context}\n==========================================\n")
 
         # 2. 使用优化后的上下文调用 LLM
         messages = [
