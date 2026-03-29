@@ -44,7 +44,7 @@ class RAGTool(Tool):
         knowledge_base_path: str = "./knowledge_base",
         qdrant_url: str = None,
         qdrant_api_key: str = None,
-        collection_name: str = "rag_knowledge_base",
+        collection_name: Optional[str] = None,
         rag_namespace: str = "default",
         expandable: bool = False
     ):
@@ -57,7 +57,12 @@ class RAGTool(Tool):
         self.knowledge_base_path = knowledge_base_path
         self.qdrant_url = qdrant_url or os.getenv("QDRANT_URL")
         self.qdrant_api_key = qdrant_api_key or os.getenv("QDRANT_API_KEY")
-        self.collection_name = collection_name
+        # 未显式传入时使用 RAG_QDRANT_COLLECTION，再回退 rag_knowledge_base（与记忆库 QDRANT_COLLECTION 分离）
+        if collection_name is not None:
+            self.collection_name = collection_name
+        else:
+            env_col = (os.getenv("RAG_QDRANT_COLLECTION") or "").strip()
+            self.collection_name = env_col or "rag_knowledge_base"
         self.rag_namespace = rag_namespace
         self._pipelines: Dict[str, Dict[str, Any]] = {}
         

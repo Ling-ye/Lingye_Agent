@@ -8,6 +8,9 @@
 环境变量：
 - EMBED_MODEL_TYPE: "dashscope" | "local" | "tfidf"（默认 dashscope）
 - EMBED_MODEL_NAME: 模型名称（dashscope默认 text-embedding-v3；local默认 sentence-transformers/all-MiniLM-L6-v2）
+  local 完全离线时请填本机目录绝对路径（已下载好的模型文件夹），勿填 Hub 模型 ID。
+- EMBED_OFFLINE: 设为 1/true 时启用 HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE，禁止联网拉模型。
+- EMBED_STRICT_LOCAL: 设为 1/true 且 EMBED_MODEL_TYPE=local 时，嵌入回退链仅为 local→tfidf，不尝试 dashscope。
 - EMBED_API_KEY: Embedding API Key（统一命名）
 - EMBED_BASE_URL: Embedding Base URL（统一命名，可选）
 """
@@ -17,6 +20,19 @@ from urllib.parse import urlparse
 import threading
 import os
 import numpy as np
+
+
+def _env_truthy(name: str) -> bool:
+    v = (os.getenv(name) or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _apply_embed_offline_env() -> None:
+    """禁止 huggingface/transformers 访问 Hub（需配合本地路径或已有缓存）。"""
+    if not _env_truthy("EMBED_OFFLINE"):
+        return
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 def _embedding_base_url_is_openai_compatible(base_url: str) -> bool:
@@ -65,6 +81,7 @@ class LocalTransformerEmbedding(EmbeddingModel):
         self._load_backend()
 
     def _load_backend(self):
+        _apply_embed_offline_env()
         # 优先 sentence-transformers
         try:
             from sentence_transformers import SentenceTransformer
@@ -353,11 +370,14 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
 
 
 def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kwargs) -> EmbeddingModel:
-    """带回退的创建：dashscope -> local -> tfidf"""
+    """带回退的创建：默认 dashscope -> local -> tfidf；EMBED_STRICT_LOCAL 时 local 模式为 local -> tfidf"""
     print(f"[debug] preferred_type:{preferred_type}")
     if preferred_type in ("sentence_transformer", "huggingface"):
         preferred_type = "local"
-    fallback = ["dashscope", "local", "tfidf"]
+    if preferred_type == "local" and _env_truthy("EMBED_STRICT_LOCAL"):
+        fallback = ["local", "tfidf"]
+    else:
+        fallback = ["dashscope", "local", "tfidf"]
     # 将首选放最前
     if preferred_type in fallback:
         fallback.remove(preferred_type)
