@@ -5,6 +5,7 @@ qdrant_client
 neo4j
 scikit-learn
 numpy
+jieba
 
 sentence-transformers
 dashscope
