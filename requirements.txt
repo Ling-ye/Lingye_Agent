@@ -9,7 +9,7 @@ jieba
 spacy
 # python -m spacy download zh_core_web_sm
 # python -m spacy download en_core_web_sm
-
+tiktoken >= 0.9.0
 
 sentence-transformers
 dashscope
