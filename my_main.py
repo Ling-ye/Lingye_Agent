@@ -1,11 +1,11 @@
 
 from dotenv import load_dotenv
-from core.llm import MyLLM 
+from core import LingyeLLM
 
 # 加载环境变量
 load_dotenv()
 
-llm = MyLLM(provider="modelscope",base_url="https://aihubmix.com/v1")
+llm = LingyeLLM(provider="modelscope", base_url="https://aihubmix.com/v1")
 
 # 准备消息
 messages = [{"role": "user", "content": "你好，请介绍一下你自己。"}]
@@ -16,6 +16,3 @@ response_stream = llm.think(messages)
 print("ModelScope Response:")
 for chunk in response_stream:
     pass
-
-
-python -m vllm.entrypoints.openai.api_server  --model Qwen/Qwen1.5-0.5B-Chat  --host 0.0.0.0  --port 8000

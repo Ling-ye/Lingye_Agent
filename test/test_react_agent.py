@@ -7,9 +7,9 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from dotenv import load_dotenv
-from ..core.llm import LingyeLLM
-from ..tools.registry import ToolRegistry
-from ..agents.react_agent import ReActAgent
+from core import LingyeLLM
+from tools import ToolRegistry
+from agents import ReActAgent
 
 # 加载环境变量
 load_dotenv()
@@ -28,7 +28,7 @@ def test_react_agent():
     
     # 注册计算器工具
     try:
-        from tools.simple_calculate import simple_calculate
+        from tools import simple_calculate
         tool_registry.register_function("calculate", "执行数学计算，支持基本的四则运算", simple_calculate)
         print("✅ 计算器工具注册成功")
     except ImportError:
@@ -36,7 +36,7 @@ def test_react_agent():
 
     # 注册搜索工具（如果可用）
     try:
-        from tools.search import search
+        from tools import search  # noqa: F401 - search tool placeholder
         tool_registry.register_function("search", "搜索互联网信息", search)
         print("✅ 搜索工具注册成功")
     except ImportError:
@@ -108,7 +108,7 @@ def test_custom_prompt():
     
     # 注册计算器工具
     try:
-        from tools.simple_calculate import simple_calculate
+        from tools import simple_calculate
         tool_registry.register_function("calculate", "数学计算工具", simple_calculate)
     except ImportError:
         pass

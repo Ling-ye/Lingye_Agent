@@ -1,7 +1,7 @@
 # advanced_search.py
 import os
 from typing import Optional, List, Dict, Any
-from ..tools.registry import ToolRegistry
+from .registry import ToolRegistry
 
 class AdvancedSearchTool:
     """

@@ -11,10 +11,9 @@ PARENT_DIR = os.path.dirname(PROJECT_ROOT)
 if PARENT_DIR not in sys.path:
     sys.path.insert(0, PARENT_DIR)
 
-from ..agents.function_call_agent import FunctionCallAgent
-from ..core.exceptions import LingyeAgentsException
-from ..core.llm import LingyeLLM
-from ..tools.simple_calculate import create_calculator_registry, simple_calculate
+from agents import FunctionCallAgent
+from core import LingyeAgentsException, LingyeLLM
+from tools import create_calculator_registry, simple_calculate
 
 load_dotenv()
 

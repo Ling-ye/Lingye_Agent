@@ -11,7 +11,7 @@ if PROJECT_ROOT not in sys.path:
 
 from dotenv import load_dotenv
 
-from ..tools.note_tool import NoteTool
+from tools import NoteTool
 
 load_dotenv()
 

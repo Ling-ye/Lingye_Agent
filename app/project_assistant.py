@@ -1,10 +1,7 @@
-from ..agents.simple_agent import SimpleAgent
-from ..core.llm import LingyeLLM
-from ..context.builder import ContextBuilder, ContextConfig, ContextPacket
-from ..tools.memory_tool import MemoryTool
-from ..tools.rag_tool import RAGTool
-from ..tools.note_tool import NoteTool
-from ..core.message import Message
+from agents import SimpleAgent
+from core import LingyeLLM, Message
+from context import ContextBuilder, ContextConfig, ContextPacket
+from tools import MemoryTool, RAGTool, NoteTool
 from datetime import datetime
 from typing import List, Dict
 from dotenv import load_dotenv
@@ -150,7 +147,7 @@ class ProjectAssistant(SimpleAgent):
 
     def _update_history(self, user_input: str, response: str):
         """更新对话历史"""
-        from hello_agents.core.message import Message
+        from core import Message
 
         self.conversation_history.append(
             Message(content=user_input, role="user", timestamp=datetime.now())

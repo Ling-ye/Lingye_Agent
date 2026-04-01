@@ -14,9 +14,8 @@ import tiktoken
 import math
 import jieba
 
-from ..core.message import Message
-from ..tools.memory_tool import MemoryTool
-from ..tools.rag_tool import RAGTool
+from core import Message
+from tools import MemoryTool, RAGTool
 
 
 @dataclass

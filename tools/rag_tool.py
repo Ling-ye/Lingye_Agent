@@ -25,9 +25,9 @@ import time
 
 logger = logging.getLogger(__name__)
 
-from ..tools.base import Tool, ToolParameter, tool_action
-from ..memory.rag.pipeline import create_rag_pipeline
-from ..core.llm import LingyeLLM
+from .base import Tool, ToolParameter, tool_action
+from memory.rag import create_rag_pipeline
+from core import LingyeLLM
 
 class RAGTool(Tool):
     """RAG工具

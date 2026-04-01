@@ -1,9 +1,11 @@
 from dotenv import load_dotenv
 
-from ..tools.advanced_search import create_advanced_search_registry
-from ..tools.chain import ToolChain, ToolChainManager, create_research_calculator_chain
-from ..tools.registry import ToolRegistry
-from ..tools.simple_calculate import simple_calculate
+from tools import (
+    create_advanced_search_registry,
+    ToolChain, ToolChainManager, create_research_calculator_chain,
+    ToolRegistry,
+    simple_calculate,
+)
 
 load_dotenv()
 
@@ -55,7 +57,7 @@ def test_chain_search_calculate_summarize_llm():
 
     计算步骤通过 context 传入表达式（例如年份差），与搜索主题解耦，便于稳定跑通计算器。
     """
-    from ..core.llm import LingyeLLM
+    from core import LingyeLLM
 
     try:
         llm = LingyeLLM()

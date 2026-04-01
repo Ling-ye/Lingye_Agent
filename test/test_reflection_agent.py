@@ -7,8 +7,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from dotenv import load_dotenv
-from ..core.llm import LingyeLLM
-from ..agents.reflection_agent import ReflectionAgent
+from core import LingyeLLM
+from agents import ReflectionAgent
 
 load_dotenv()
 llm = LingyeLLM()

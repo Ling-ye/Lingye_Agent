@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from datetime import datetime
 from typing import List
-from ..tools.memory_tool import MemoryTool
+from tools import MemoryTool
 
 def memory_tool_execute_demo():
     """MemoryTool execute方法演示"""

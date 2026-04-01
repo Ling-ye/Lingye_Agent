@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
-from ..core.llm import LingyeLLM
-from ..agents.plan_solve_agent import PlanAndSolveAgent
+from core import LingyeLLM
+from agents import PlanAndSolveAgent
 
 # 加载环境变量
 load_dotenv()

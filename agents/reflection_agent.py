@@ -4,16 +4,10 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING, AsyncGenerator
 import json
 from datetime import datetime
 
-from ..core.agent import Agent
-from ..core.llm import LingyeLLM
-from ..core.config import Config
-from ..core.message import Message
-from ..core.streaming import StreamEvent, StreamEventType
-from ..core.lifecycle import LifecycleHook
-from ..core.memory import Memory
+from core import Agent, LingyeLLM, Config, Message, StreamEvent, StreamEventType, LifecycleHook, Memory
 
 if TYPE_CHECKING:
-    from ..tools.registry import ToolRegistry
+    from tools import ToolRegistry
 
 
 class ReflectionAgent(Agent):

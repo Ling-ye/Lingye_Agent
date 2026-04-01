@@ -138,7 +138,7 @@ class SemanticMemory(BaseMemory):
     
     def _init_databases(self):
         """初始化专业数据库存储（支持部分降级运行）"""
-        from ...core.database_config import get_database_config
+        from core import get_database_config
         db_config = get_database_config()
         
         # 初始化Qdrant向量数据库（核心组件，失败则抛出异常）

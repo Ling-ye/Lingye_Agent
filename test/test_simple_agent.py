@@ -8,10 +8,9 @@ if PROJECT_ROOT not in sys.path:
 
 
 from dotenv import load_dotenv
-from ..core.llm import LingyeLLM
-from ..tools.registry import ToolRegistry
-from ..tools.simple_calculate import simple_calculate
-from ..agents.simple_agent import SimpleAgent
+from core import LingyeLLM
+from tools import ToolRegistry, simple_calculate
+from agents import SimpleAgent
 
 # 加载环境变量
 load_dotenv()

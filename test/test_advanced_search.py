@@ -1,6 +1,6 @@
 # test_advanced_search.py
 from dotenv import load_dotenv
-from ..tools.advanced_search import create_advanced_search_registry, AdvancedSearchTool
+from tools import create_advanced_search_registry, AdvancedSearchTool
 
 # 加载环境变量
 load_dotenv()

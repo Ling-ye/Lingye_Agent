@@ -13,8 +13,7 @@ if PROJECT_ROOT not in sys.path:
 
 from dotenv import load_dotenv
 
-from ..tools.note_tool import NoteTool
-from ..tools.terminal_tool import TerminalTool
+from tools import NoteTool, TerminalTool
 
 load_dotenv()
 
@@ -305,9 +304,9 @@ with tempfile.TemporaryDirectory() as workspace:
     print()
 
     try:
-        from ..context.builder import ContextBuilder, ContextConfig, ContextPacket
-        from ..core.message import Message
-        from ..tools.memory_tool import MemoryTool
+        from context import ContextBuilder, ContextConfig, ContextPacket
+        from core import Message
+        from tools import MemoryTool
     except ImportError as err:
         print(
             f"=== 跳过测试 22–23（需要完整依赖，例如 numpy、tiktoken 等）: {err} ===\n"

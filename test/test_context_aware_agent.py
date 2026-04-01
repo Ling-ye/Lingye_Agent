@@ -10,8 +10,8 @@ if PROJECT_ROOT not in sys.path:
 
 from dotenv import load_dotenv
 
-from ..agents.context_aware_agent import ContextAwareAgent
-from ..core.llm import LingyeLLM
+from agents import ContextAwareAgent
+from core import LingyeLLM
 
 load_dotenv()
 

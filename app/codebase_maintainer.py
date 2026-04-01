@@ -14,14 +14,10 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
 
-from ..core.llm import LingyeLLM 
-from ..agents.function_call_agent import FunctionCallAgent
-from ..context.builder import ContextBuilder, ContextConfig, ContextPacket
-from ..tools.memory_tool import MemoryTool
-from ..tools.note_tool import NoteTool
-from ..tools.terminal_tool import TerminalTool
-from ..tools.registry import ToolRegistry
-from ..core.message import Message
+from core import LingyeLLM, Message
+from agents import FunctionCallAgent
+from context import ContextBuilder, ContextConfig, ContextPacket
+from tools import MemoryTool, NoteTool, TerminalTool, ToolRegistry
 
 
 class CodebaseMaintainer:

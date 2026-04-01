@@ -3,13 +3,10 @@ from __future__ import annotations
 import json
 from typing import Iterator, Optional, Union, TYPE_CHECKING, Any, Dict
 
-from ..core.agent import Agent
-from ..core.config import Config
-from ..core.llm import LingyeLLM
-from ..core.message import Message
+from core import Agent, Config, LingyeLLM, Message
 
 if TYPE_CHECKING:
-    from ..tools.registry import ToolRegistry
+    from tools import ToolRegistry
 
 
 def _map_parameter_type(param_type: str) -> str:
@@ -140,7 +137,7 @@ class FunctionCallAgent(Agent):
     def add_tool(self, tool) -> None:
         """便捷方法：将工具注册到当前Agent"""
         if not self.tool_registry:
-            from ..tools.registry import ToolRegistry
+            from tools import ToolRegistry
 
             self.tool_registry = ToolRegistry()
             self.enable_tool_calling = True

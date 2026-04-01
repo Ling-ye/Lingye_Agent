@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from ..tools.registry import ToolRegistry
+from .registry import ToolRegistry
 
 class ToolChain:
     """工具链 - 支持多个工具的顺序执行"""

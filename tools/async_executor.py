@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
 from typing import Dict, Any, List, Callable
-from ..tools.registry import ToolRegistry
+from .registry import ToolRegistry
 
 class AsyncToolExecutor:
     """异步工具执行器"""
@@ -46,7 +46,7 @@ class AsyncToolExecutor:
 # 使用示例
 async def test_parallel_execution():
     """测试并行工具执行"""
-    from ..tools.registry import ToolRegistry
+    from .registry import ToolRegistry
 
     registry = ToolRegistry()
     # 假设已经注册了搜索和计算工具

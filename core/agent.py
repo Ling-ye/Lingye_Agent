@@ -6,7 +6,7 @@ from .message import Message
 from .llm import LingyeLLM
 from .config import Config
 if TYPE_CHECKING:
-    from ..tools.registry import ToolRegistry
+    from tools import ToolRegistry
 
 
 

@@ -3,13 +3,10 @@
 from typing import Optional, Iterator, TYPE_CHECKING
 import re
 
-from ..core.agent import Agent
-from ..core.llm import LingyeLLM
-from ..core.config import Config
-from ..core.message import Message
+from core import Agent, LingyeLLM, Config, Message
 
 if TYPE_CHECKING:
-    from ..tools.registry import ToolRegistry
+    from tools import ToolRegistry
 
 class SimpleAgent(Agent):
     """简单的对话Agent，支持可选的工具调用"""
@@ -329,7 +326,7 @@ class SimpleAgent(Agent):
         如果是MCP工具且启用了auto_expand，会自动展开为多个独立工具
         """
         if not self.tool_registry:
-            from ..tools.registry import ToolRegistry
+            from tools import ToolRegistry
             self.tool_registry = ToolRegistry()
             self.enable_tool_calling = True
 

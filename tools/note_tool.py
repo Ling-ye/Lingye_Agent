@@ -40,7 +40,7 @@ from pathlib import Path
 import json
 import re
 
-from ..tools.base import Tool, ToolParameter, tool_action
+from .base import Tool, ToolParameter, tool_action
 
 
 class NoteTool(Tool):

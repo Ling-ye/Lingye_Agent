@@ -3,10 +3,7 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from ..tools.advanced_search import create_advanced_search_registry
-from ..tools.async_executor import AsyncToolExecutor
-from ..tools.registry import ToolRegistry
-from ..tools.simple_calculate import simple_calculate
+from tools import create_advanced_search_registry, AsyncToolExecutor, ToolRegistry, simple_calculate
 
 load_dotenv()
 

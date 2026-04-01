@@ -8,7 +8,7 @@ if PROJECT_ROOT not in sys.path:
 
 
 from dotenv import load_dotenv
-from tools.simple_calculate import create_calculator_registry
+from tools import create_calculator_registry
 
 # 加载环境变量
 load_dotenv()
@@ -37,7 +37,7 @@ def test_calculator_tool():
 
 def test_with_simple_agent():
     """测试与SimpleAgent的集成"""
-    from core.llm import LingyeLLM
+    from core import LingyeLLM
 
     # 创建LLM客户端
     llm = LingyeLLM()

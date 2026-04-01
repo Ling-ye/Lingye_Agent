@@ -17,8 +17,7 @@ import time
 import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
-from ..tools.rag_tool import RAGTool
-from ..tools.memory_tool import MemoryTool
+from tools import RAGTool, MemoryTool
 import gradio as gr
 
 class PDFLearningAssistant:

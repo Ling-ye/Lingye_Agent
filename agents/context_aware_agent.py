@@ -1,8 +1,7 @@
-from ..agents.simple_agent import SimpleAgent
-from ..context.builder import ContextBuilder, ContextConfig
-from ..core.llm import LingyeLLM
-from ..tools.memory_tool import MemoryTool
-from ..tools.rag_tool import RAGTool
+from agents import SimpleAgent
+from context import ContextBuilder, ContextConfig
+from core import LingyeLLM
+from tools import MemoryTool, RAGTool
 
 class ContextAwareAgent(SimpleAgent):
     """具有上下文感知能力的 Agent"""
@@ -41,7 +40,7 @@ class ContextAwareAgent(SimpleAgent):
         response = self.llm.invoke(messages)
 
         # 3. 更新对话历史
-        from ..core.message import Message
+        from core import Message
         from datetime import datetime
 
         self.conversation_history.append(
