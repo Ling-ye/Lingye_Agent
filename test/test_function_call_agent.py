@@ -4,12 +4,10 @@ import sys
 from typing import Optional
 from dotenv import load_dotenv
 
-# 把项目父目录加入到 sys.path
 CURRENT_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR)  
-PARENT_DIR = os.path.dirname(PROJECT_ROOT)  
-if PARENT_DIR not in sys.path:
-    sys.path.insert(0, PARENT_DIR)
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from agents import FunctionCallAgent
 from core import LingyeAgentsException, LingyeLLM

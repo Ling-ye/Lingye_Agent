@@ -1,4 +1,12 @@
 # test_advanced_search.py
+import os
+import sys
+
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from dotenv import load_dotenv
 from tools import create_advanced_search_registry, AdvancedSearchTool
 

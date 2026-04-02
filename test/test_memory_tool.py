@@ -5,6 +5,14 @@
 展示MemoryTool的核心execute方法和基本操作
 """
 
+import os
+import sys
+
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from dotenv import load_dotenv
 load_dotenv()
 from datetime import datetime
