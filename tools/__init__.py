@@ -10,6 +10,7 @@ from .rag_tool import RAGTool
 from .chain import ToolChain, ToolChainManager, create_research_calculator_chain
 from .async_executor import AsyncToolExecutor
 from .advanced_search import AdvancedSearchTool, create_advanced_search_registry
+from .protocol.mcp_tool import MCPTool
 
 __all__ = [
     "Tool",
@@ -28,4 +29,5 @@ __all__ = [
     "AsyncToolExecutor",
     "AdvancedSearchTool",
     "create_advanced_search_registry",
+    "MCPTool",
 ]
