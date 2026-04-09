@@ -149,7 +149,7 @@ class MCPClient:
                 return PythonStdioTransport(
                     script_path=args[0],
                     args=args[1:] + self.server_args,
-                    env=config.get("env"),
+                    env=config.get("env") or self.env,
                     cwd=config.get("cwd"),
                     **self.transport_kwargs
                 )
@@ -159,7 +159,7 @@ class MCPClient:
                 return StdioTransport(
                     command=config.get("command", "python"),
                     args=args + self.server_args,
-                    env=config.get("env"),
+                    env=config.get("env") or self.env,
                     cwd=config.get("cwd"),
                     **self.transport_kwargs
                 )
