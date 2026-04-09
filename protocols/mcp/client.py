@@ -73,7 +73,9 @@ class MCPClient:
         """
         self.server_args = server_args or []
         self.transport_type = transport_type
-        self.env = env or {}
+        # MCP SDK 默认只继承 PATH 等白名单变量，不含 TOKEN/KEY 等凭证，
+        # 因此未指定 env 时继承完整 os.environ（load_dotenv 已加载 .env）
+        self.env = env if env is not None else os.environ.copy()
         self.transport_kwargs = transport_kwargs
         self.server_source = self._prepare_server_source(server_source)
         self.client: Optional[FastClient] = None
@@ -181,19 +183,30 @@ class MCPClient:
     async def __aenter__(self):
         """异步上下文管理器入口"""
         print("[MCPClient] 连接到 MCP 服务器...")
-        self.client = FastClient(self.server_source)
-        self._context_manager = self.client
-        await self._context_manager.__aenter__()
-        print("[MCPClient] 连接成功")
+        try:
+            self.client = FastClient(self.server_source)
+            self._context_manager = self.client
+            await self._context_manager.__aenter__()
+            print("[MCPClient] 连接成功")
+        except Exception as e:
+            print(f"[MCPClient] 连接失败: {type(e).__name__}: {e}")
+            raise
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """异步上下文管理器出口"""
         if self._context_manager:
-            await self._context_manager.__aexit__(exc_type, exc_val, exc_tb)
-            self.client = None
-            self._context_manager = None
-        print("[MCPClient] 连接已断开")
+            try:
+                await self._context_manager.__aexit__(exc_type, exc_val, exc_tb)
+            except Exception as e:
+                print(f"[MCPClient] 断开连接时出错: {type(e).__name__}: {e}")
+            finally:
+                self.client = None
+                self._context_manager = None
+        if exc_type:
+            print(f"[MCPClient] 连接已断开 (异常: {exc_type.__name__}: {exc_val})")
+        else:
+            print("[MCPClient] 连接已断开")
 
     async def list_tools(self) -> List[Dict[str, Any]]:
         """列出所有可用的工具"""
@@ -224,7 +237,18 @@ class MCPClient:
         if not self.client:
             raise RuntimeError("Client not connected. Use 'async with client:' context manager.")
 
-        result = await self.client.call_tool(tool_name, arguments)
+        try:
+            result = await self.client.call_tool(tool_name, arguments)
+        except Exception as e:
+            print(f"[MCPClient] 工具 '{tool_name}' 调用异常: {type(e).__name__}: {e}")
+            raise
+
+        if hasattr(result, 'isError') and result.isError:
+            error_text = ""
+            if hasattr(result, 'content') and result.content:
+                error_text = " | ".join(getattr(c, 'text', str(c)) for c in result.content)
+            print(f"[MCPClient] 工具 '{tool_name}' 返回错误: {error_text}")
+            return f"[MCP错误] {error_text}"
 
         # 解析结果 - FastMCP 返回 ToolResult 对象
         if hasattr(result, 'content') and result.content:

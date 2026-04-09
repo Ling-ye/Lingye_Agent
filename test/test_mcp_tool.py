@@ -26,5 +26,7 @@ agent = SimpleAgent(name="GitHub 助手", llm=LingyeLLM())
 agent.add_tool(github_tool)
 
 # 测试：搜索 GitHub 上与 MCP 相关的热门仓库
-response = agent.run("帮我在 GitHub 上搜索与 'model context protocol' 相关的热门仓库，列出前5个并简单介绍")
+response = agent.run(
+    "帮我在 GitHub 上搜索与 'create_pull_request' 相关的热门仓库，列出前5个并简单介绍"
+)
 print(response)

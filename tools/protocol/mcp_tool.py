@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 from ..base import Tool, ToolParameter
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -27,12 +28,14 @@ class MCPTool(Tool):
         tool = MCPTool(server=server)
     """
 
-    def __init__(self,
-                 name: str = "mcp",
-                 description: Optional[str] = None,
-                 server_command: Optional[List[str]] = None,
-                 server_args: Optional[List[str]] = None,
-                 server: Optional[Any] = None):
+    def __init__(
+        self,
+        name: str = "mcp",
+        description: Optional[str] = None,
+        server_command: Optional[List[str]] = None,
+        server_args: Optional[List[str]] = None,
+        server: Optional[Any] = None,
+    ):
         """
         Args:
             name: 工具名称
@@ -52,7 +55,9 @@ class MCPTool(Tool):
 
         if description is None:
             count = len(self._available_tools)
-            description = f"MCP工具服务器，提供 {count} 个工具。" if count else "MCP工具服务器。"
+            description = (
+                f"MCP工具服务器，提供 {count} 个工具。" if count else "MCP工具服务器。"
+            )
 
         super().__init__(name=name, description=description)
 
@@ -97,12 +102,21 @@ class MCPTool(Tool):
     def _discover_tools(self) -> List[Dict[str, Any]]:
         """发现 MCP 服务器提供的工具列表"""
         try:
-            return self._run_async(self._async_list_tools())
-        except Exception:
+            tools = self._run_async(self._async_list_tools())
+            if tools:
+                print(
+                    f"[MCPTool] 发现 {len(tools)} 个工具: {[t['name'] for t in tools]}"
+                )
+            else:
+                print("[MCPTool] 警告: 服务器未返回任何工具")
+            return tools
+        except Exception as e:
+            print(f"[MCPTool] 发现工具失败: {type(e).__name__}: {e}")
             return []
 
     async def _async_list_tools(self) -> List[Dict[str, Any]]:
         from protocols.mcp.client import MCPClient
+
         source = self.server if self.server else self.server_command
         async with MCPClient(source, self.server_args) as client:
             return await client.list_tools()
@@ -111,6 +125,7 @@ class MCPTool(Tool):
         """在任意上下文中安全运行协程"""
         try:
             asyncio.get_running_loop()
+
             # 已有事件循环，在新线程中运行
             def _run():
                 loop = asyncio.new_event_loop()
@@ -119,6 +134,7 @@ class MCPTool(Tool):
                     return loop.run_until_complete(coro)
                 finally:
                     loop.close()
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 return executor.submit(_run).result()
         except RuntimeError:
@@ -146,10 +162,13 @@ class MCPTool(Tool):
         try:
             return self._run_async(self._async_run(action, parameters))
         except Exception as e:
-            return f"MCP 操作失败: {e}"
+            error_msg = f"MCP 操作失败 (action={action}): {type(e).__name__}: {e}"
+            print(f"[MCPTool] {error_msg}")
+            return error_msg
 
     async def _async_run(self, action: str, parameters: Dict[str, Any]) -> str:
         from protocols.mcp.client import MCPClient
+
         source = self.server if self.server else self.server_command
         async with MCPClient(source, self.server_args) as client:
             if action == "list_tools":
@@ -165,7 +184,9 @@ class MCPTool(Tool):
                 tool_name = parameters.get("tool_name")
                 if not tool_name:
                     return "错误：缺少 tool_name 参数"
-                result = await client.call_tool(tool_name, parameters.get("arguments", {}))
+                result = await client.call_tool(
+                    tool_name, parameters.get("arguments", {})
+                )
                 return f"工具 '{tool_name}' 执行结果:\n{result}"
 
             elif action == "list_resources":
@@ -197,7 +218,9 @@ class MCPTool(Tool):
                 prompt_name = parameters.get("prompt_name")
                 if not prompt_name:
                     return "错误：缺少 prompt_name 参数"
-                messages = await client.get_prompt(prompt_name, parameters.get("prompt_arguments", {}))
+                messages = await client.get_prompt(
+                    prompt_name, parameters.get("prompt_arguments", {})
+                )
                 lines = [f"提示词 '{prompt_name}':"]
                 for msg in messages:
                     lines.append(f"  [{msg['role']}] {msg['content']}")
@@ -212,36 +235,36 @@ class MCPTool(Tool):
                 name="action",
                 type="string",
                 description="操作类型: list_tools | call_tool | list_resources | read_resource | list_prompts | get_prompt",
-                required=True
+                required=True,
             ),
             ToolParameter(
                 name="tool_name",
                 type="string",
                 description="工具名称（call_tool 需要）",
-                required=False
+                required=False,
             ),
             ToolParameter(
                 name="arguments",
                 type="object",
                 description="工具参数（call_tool 需要）",
-                required=False
+                required=False,
             ),
             ToolParameter(
                 name="uri",
                 type="string",
                 description="资源 URI（read_resource 需要）",
-                required=False
+                required=False,
             ),
             ToolParameter(
                 name="prompt_name",
                 type="string",
                 description="提示词名称（get_prompt 需要）",
-                required=False
+                required=False,
             ),
             ToolParameter(
                 name="prompt_arguments",
                 type="object",
                 description="提示词参数（get_prompt 可选）",
-                required=False
+                required=False,
             ),
         ]
