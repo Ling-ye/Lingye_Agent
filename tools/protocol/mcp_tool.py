@@ -35,6 +35,7 @@ class MCPTool(Tool):
         server_command: Optional[List[str]] = None,
         server_args: Optional[List[str]] = None,
         server: Optional[Any] = None,
+        auto_expand: bool = True,
     ):
         """
         Args:
@@ -47,6 +48,7 @@ class MCPTool(Tool):
         self.server_command = server_command
         self.server_args = server_args or []
         self.server = server
+        self.auto_expand = auto_expand
 
         if not server_command and not server:
             self.server = self._create_builtin_server()
@@ -59,7 +61,7 @@ class MCPTool(Tool):
                 f"MCP工具服务器，提供 {count} 个工具。" if count else "MCP工具服务器。"
             )
 
-        super().__init__(name=name, description=description)
+        super().__init__(name=name, description=description, expandable=auto_expand)
 
     def _create_builtin_server(self):
         """创建内置演示服务器"""
