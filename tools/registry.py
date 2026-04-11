@@ -113,18 +113,27 @@ class ToolRegistry:
 
     def get_tools_description(self) -> str:
         """
-        获取所有可用工具的格式化描述字符串
+        获取所有可用工具的格式化描述字符串（含参数信息）
 
         Returns:
             工具描述字符串，用于构建提示词
         """
         descriptions = []
 
-        # Tool对象描述
         for tool in self._tools.values():
-            descriptions.append(f"- {tool.name}: {tool.description}")
+            line = f"- {tool.name}: {tool.description}"
+            try:
+                params = tool.get_parameters()
+                if params:
+                    parts = []
+                    for p in params:
+                        req = "必填" if p.required else f"可选, 默认={p.default}"
+                        parts.append(f"{p.name}({p.type}, {req})")
+                    line += "  参数: " + ", ".join(parts)
+            except Exception:
+                pass
+            descriptions.append(line)
 
-        # 函数工具描述
         for name, info in self._functions.items():
             descriptions.append(f"- {name}: {info['description']}")
 

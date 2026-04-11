@@ -43,121 +43,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core import LingyeLLM, Message
+from core import LingyeLLM
 from agents import SimpleAgent
 from tools import MCPTool
 
 
-def _build_mcp_system_prompt(
-    tool_name: str, available_tools: list, auto_expand: bool = True
-) -> str:
-    """根据 MCPTool 发现的子工具列表，生成精确的系统提示词。
-
-    Args:
-        tool_name: MCP 工具名称（也作为展开后的前缀）
-        available_tools: 子工具列表
-        auto_expand: 是否已展开为独立工具。展开模式下工具名为
-                      '{tool_name}_{子工具名}'，直接传参；未展开时
-                      用 JSON 格式的 call_tool action。
-    """
-    if auto_expand:
-        return _build_expanded_system_prompt(tool_name, available_tools)
-    return _build_unified_system_prompt(tool_name, available_tools)
-
-
-def _build_expanded_system_prompt(prefix: str, available_tools: list) -> str:
-    """展开模式：每个子工具已注册为独立工具，用 key=value 格式直接调用。"""
-    tools_desc = "\n".join(
-        f"  - {prefix}_{t['name']}: {t['description']}  参数 schema: {t.get('input_schema', {})}"
-        for t in available_tools
-    )
-
-    examples = []
-    for t in available_tools[:4]:
-        schema = t.get("input_schema", {})
-        props = schema.get("properties", {})
-        if props:
-            kv_parts = []
-            for p_name, p_info in props.items():
-                sample = {"string": '"hello"', "integer": "3", "number": "3.0"}.get(
-                    p_info.get("type", "string"), '"value"'
-                )
-                kv_parts.append(f"{p_name}={sample}")
-            kv_str = ",".join(kv_parts)
-            examples.append(
-                f"  `[TOOL_CALL:{prefix}_{t['name']}:{kv_str}]`"
-            )
-        else:
-            examples.append(
-                f"  `[TOOL_CALL:{prefix}_{t['name']}:action=call]`"
-            )
-    examples_str = "\n".join(examples)
-
-    return f"""你是一个由 Lingye 开发的 AI 助手。你可以使用以下工具来完成任务。
-
-## 可用工具
-{tools_desc}
-
-## 调用方式 —— 极其重要，必须严格遵守
-每个工具都是独立的，直接用 `key=value` 格式传参：
-
-`[TOOL_CALL:工具名:参数名1=值1,参数名2=值2]`
-
-### 示例
-{examples_str}
-
-### 重要规则
-1. 工具名已包含前缀 '{prefix}_'，直接使用完整工具名调用
-2. 参数使用 key=value 格式，多个参数用逗号分隔
-3. 你可以在一条消息中发起多个 TOOL_CALL
-4. 拿到所有工具结果后，请给出最终的、完整的回答
-5. 请务必使用工具来完成任务，不要自己猜答案
-"""
-
-
-def _build_unified_system_prompt(tool_name: str, available_tools: list) -> str:
-    """未展开模式：所有子工具通过统一的 tool_name 以 JSON call_tool 调用。"""
-    tools_desc = "\n".join(
-        f"  - {t['name']}: {t['description']}  参数 schema: {t.get('input_schema', {})}"
-        for t in available_tools
-    )
-
-    return f"""你是一个由 Lingye 开发的 AI 助手。你可以使用名为 '{tool_name}' 的 MCP 工具来完成任务。
-
-## '{tool_name}' 工具内部可用的子工具：
-{tools_desc}
-
-## 调用方式 —— 极其重要，必须严格遵守
-当你需要调用某个子工具时，使用如下格式：
-
-`[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "<子工具名>", "arguments": {{"参数名1": 值1, "参数名2": 值2}}}}]`
-
-注意：TOOL_CALL 的第二个冒号后面必须是一个完整的 JSON 对象（以 {{ 开头，以 }} 结尾）。
-
-### 示例
-- 调用 add(a=3, b=5):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "add", "arguments": {{"a": 3, "b": 5}}}}]`
-- 调用 echo(message="hello"):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "echo", "arguments": {{"message": "hello"}}}}]`
-- 调用 greet(name="Alice"):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "greet", "arguments": {{"name": "Alice"}}}}]`
-- 调用 get_time():
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "get_time", "arguments": {{}}}}]`
-- 调用 reverse(text="hello"):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "reverse", "arguments": {{"text": "hello"}}}}]`
-- 调用 word_count(text="one two three"):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "word_count", "arguments": {{"text": "one two three"}}}}]`
-- 调用 search_repositories(query="fastmcp"):
-  `[TOOL_CALL:{tool_name}:{{"action": "call_tool", "tool_name": "search_repositories", "arguments": {{"query": "fastmcp"}}}}]`
-
-### 重要规则
-1. action 的值必须是 "call_tool"，不能直接写子工具名（如 "action": "add" 是错的）
-2. 整个参数必须是合法的 JSON 对象，以 {{ 开头 以 }} 结尾
-3. JSON 中数字不加引号，字符串加双引号
-4. 你可以在一条消息中发起多个 TOOL_CALL
-5. 拿到所有工具结果后，请给出最终的、完整的回答
-6. 请务必使用工具来完成任务，不要自己猜答案
-"""
+ROLE_PROMPT = "你是一个由 Lingye 开发的 AI 助手。请使用工具来完成任务，不要自己猜答案。"
 
 
 def _verify_result(test_name: str, response: str, expected_keywords: list) -> bool:
@@ -223,10 +114,8 @@ def test_memory_transport():
         server=server,
     )
 
-    system_prompt = _build_mcp_system_prompt("calc", mcp_tool._available_tools)
-
     agent = SimpleAgent(
-        name="Memory 测试助手", llm=LingyeLLM(), system_prompt=system_prompt
+        name="Memory 测试助手", llm=LingyeLLM(), system_prompt=ROLE_PROMPT
     )
     agent.add_tool(mcp_tool)
 
@@ -257,10 +146,8 @@ def test_stdio_transport():
         server_command=["npx", "-y", "@modelcontextprotocol/server-github"],
     )
 
-    system_prompt = _build_mcp_system_prompt("github", github_tool._available_tools)
-
     agent = SimpleAgent(
-        name="GitHub Stdio 助手", llm=LingyeLLM(), system_prompt=system_prompt
+        name="GitHub Stdio 助手", llm=LingyeLLM(), system_prompt=ROLE_PROMPT
     )
     agent.add_tool(github_tool)
 
@@ -290,10 +177,8 @@ def test_stdio_python_script():
         server_command=["python", script_path],
     )
 
-    system_prompt = _build_mcp_system_prompt("demo", mcp_tool._available_tools)
-
     agent = SimpleAgent(
-        name="Stdio Python 助手", llm=LingyeLLM(), system_prompt=system_prompt
+        name="Stdio Python 助手", llm=LingyeLLM(), system_prompt=ROLE_PROMPT
     )
     agent.add_tool(mcp_tool)
 
@@ -323,17 +208,13 @@ def test_http_transport():
     print("服务器默认监听: http://127.0.0.1:8000/mcp")
 
     mcp_tool = MCPTool(
-        name="http_demo_get_time",
+        name="http_demo",
         description="通过 HTTP 传输连接的 MCP 演示服务器",
         server_command="http://127.0.0.1:8000/mcp",
     )
 
-    system_prompt = _build_mcp_system_prompt(
-        "http_demo_get_time", mcp_tool._available_tools
-    )
-
     agent = SimpleAgent(
-        name="HTTP 测试助手", llm=LingyeLLM(), system_prompt=system_prompt
+        name="HTTP 测试助手", llm=LingyeLLM(), system_prompt=ROLE_PROMPT
     )
     agent.add_tool(mcp_tool)
 
