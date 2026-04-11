@@ -1,0 +1,32 @@
+{
+  "tavily": {
+    "command": ["npx", "-y", "@mcptools/mcp-tavily"],
+    "description": "Tavily AI 搜索，提供网页搜索和内容提取",
+    "env_keys": ["TAVILY_API_KEY"]
+  },
+  "perplexity": {
+    "command": ["npx", "-y", "@perplexity-ai/mcp-server"],
+    "description": "Perplexity 实时网络搜索、推理和深度研究",
+    "env_keys": ["PERPLEXITY_API_KEY"]
+  },
+  "obsidian": {
+    "command": ["npx", "-y", "obsidian-mcp-server"],
+    "description": "Obsidian 知识库读写、搜索和管理",
+    "env_keys": ["OBSIDIAN_API_KEY"],
+    "env_defaults": {
+      "OBSIDIAN_BASE_URL": "http://127.0.0.1:27123",
+      "OBSIDIAN_VERIFY_SSL": "false"
+    }
+  },
+  "github": {
+    "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+    "description": "GitHub 仓库搜索、Issue 和 PR 管理",
+    "env_keys": ["GITHUB_PERSONAL_ACCESS_TOKEN"]
+  },
+  "filesystem": {
+    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+    "description": "本地文件系统读写操作",
+    "env_keys": [],
+    "args": ["."]
+  }
+}
