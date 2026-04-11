@@ -48,12 +48,75 @@ from agents import SimpleAgent
 from tools import MCPTool
 
 
-def _build_mcp_system_prompt(tool_name: str, available_tools: list) -> str:
+def _build_mcp_system_prompt(
+    tool_name: str, available_tools: list, auto_expand: bool = True
+) -> str:
     """根据 MCPTool 发现的子工具列表，生成精确的系统提示词。
 
-    关键点：告诉 LLM 使用纯 JSON 格式的参数，确保 SimpleAgent 的参数
-    解析器走 JSON 分支而不是 key=value 分支（后者会在逗号处截断 JSON）。
+    Args:
+        tool_name: MCP 工具名称（也作为展开后的前缀）
+        available_tools: 子工具列表
+        auto_expand: 是否已展开为独立工具。展开模式下工具名为
+                      '{tool_name}_{子工具名}'，直接传参；未展开时
+                      用 JSON 格式的 call_tool action。
     """
+    if auto_expand:
+        return _build_expanded_system_prompt(tool_name, available_tools)
+    return _build_unified_system_prompt(tool_name, available_tools)
+
+
+def _build_expanded_system_prompt(prefix: str, available_tools: list) -> str:
+    """展开模式：每个子工具已注册为独立工具，用 key=value 格式直接调用。"""
+    tools_desc = "\n".join(
+        f"  - {prefix}_{t['name']}: {t['description']}  参数 schema: {t.get('input_schema', {})}"
+        for t in available_tools
+    )
+
+    examples = []
+    for t in available_tools[:4]:
+        schema = t.get("input_schema", {})
+        props = schema.get("properties", {})
+        if props:
+            kv_parts = []
+            for p_name, p_info in props.items():
+                sample = {"string": '"hello"', "integer": "3", "number": "3.0"}.get(
+                    p_info.get("type", "string"), '"value"'
+                )
+                kv_parts.append(f"{p_name}={sample}")
+            kv_str = ",".join(kv_parts)
+            examples.append(
+                f"  `[TOOL_CALL:{prefix}_{t['name']}:{kv_str}]`"
+            )
+        else:
+            examples.append(
+                f"  `[TOOL_CALL:{prefix}_{t['name']}:action=call]`"
+            )
+    examples_str = "\n".join(examples)
+
+    return f"""你是一个由 Lingye 开发的 AI 助手。你可以使用以下工具来完成任务。
+
+## 可用工具
+{tools_desc}
+
+## 调用方式 —— 极其重要，必须严格遵守
+每个工具都是独立的，直接用 `key=value` 格式传参：
+
+`[TOOL_CALL:工具名:参数名1=值1,参数名2=值2]`
+
+### 示例
+{examples_str}
+
+### 重要规则
+1. 工具名已包含前缀 '{prefix}_'，直接使用完整工具名调用
+2. 参数使用 key=value 格式，多个参数用逗号分隔
+3. 你可以在一条消息中发起多个 TOOL_CALL
+4. 拿到所有工具结果后，请给出最终的、完整的回答
+5. 请务必使用工具来完成任务，不要自己猜答案
+"""
+
+
+def _build_unified_system_prompt(tool_name: str, available_tools: list) -> str:
+    """未展开模式：所有子工具通过统一的 tool_name 以 JSON call_tool 调用。"""
     tools_desc = "\n".join(
         f"  - {t['name']}: {t['description']}  参数 schema: {t.get('input_schema', {})}"
         for t in available_tools
@@ -162,7 +225,9 @@ def test_memory_transport():
 
     system_prompt = _build_mcp_system_prompt("calc", mcp_tool._available_tools)
 
-    agent = SimpleAgent(name="Memory 测试助手", llm=LingyeLLM(), system_prompt=system_prompt)
+    agent = SimpleAgent(
+        name="Memory 测试助手", llm=LingyeLLM(), system_prompt=system_prompt
+    )
     agent.add_tool(mcp_tool)
 
     response = agent.run(
@@ -194,7 +259,9 @@ def test_stdio_transport():
 
     system_prompt = _build_mcp_system_prompt("github", github_tool._available_tools)
 
-    agent = SimpleAgent(name="GitHub Stdio 助手", llm=LingyeLLM(), system_prompt=system_prompt)
+    agent = SimpleAgent(
+        name="GitHub Stdio 助手", llm=LingyeLLM(), system_prompt=system_prompt
+    )
     agent.add_tool(github_tool)
 
     response = agent.run(
@@ -225,7 +292,9 @@ def test_stdio_python_script():
 
     system_prompt = _build_mcp_system_prompt("demo", mcp_tool._available_tools)
 
-    agent = SimpleAgent(name="Stdio Python 助手", llm=LingyeLLM(), system_prompt=system_prompt)
+    agent = SimpleAgent(
+        name="Stdio Python 助手", llm=LingyeLLM(), system_prompt=system_prompt
+    )
     agent.add_tool(mcp_tool)
 
     response = agent.run(
@@ -254,14 +323,18 @@ def test_http_transport():
     print("服务器默认监听: http://127.0.0.1:8000/mcp")
 
     mcp_tool = MCPTool(
-        name="http_demo",
+        name="http_demo_get_time",
         description="通过 HTTP 传输连接的 MCP 演示服务器",
         server_command="http://127.0.0.1:8000/mcp",
     )
 
-    system_prompt = _build_mcp_system_prompt("http_demo", mcp_tool._available_tools)
+    system_prompt = _build_mcp_system_prompt(
+        "http_demo_get_time", mcp_tool._available_tools
+    )
 
-    agent = SimpleAgent(name="HTTP 测试助手", llm=LingyeLLM(), system_prompt=system_prompt)
+    agent = SimpleAgent(
+        name="HTTP 测试助手", llm=LingyeLLM(), system_prompt=system_prompt
+    )
     agent.add_tool(mcp_tool)
 
     response = agent.run(
@@ -382,7 +455,9 @@ def test_config_transport():
             result = await client.call_tool("reverse", {"text": "abcdef"})
             print(f"  reverse 结果: {result}")
 
-            result = await client.call_tool("word_count", {"text": "one two three four"})
+            result = await client.call_tool(
+                "word_count", {"text": "one two three four"}
+            )
             print(f"  word_count 结果: {result}")
 
             result = await client.call_tool("get_time", {})
@@ -393,7 +468,9 @@ def test_config_transport():
 
     asyncio.run(run_config_test())
 
-    _verify_result("Config", "Config传输测试成功 fedcba 4", ["Config传输测试成功", "fedcba", "4"])
+    _verify_result(
+        "Config", "Config传输测试成功 fedcba 4", ["Config传输测试成功", "fedcba", "4"]
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
