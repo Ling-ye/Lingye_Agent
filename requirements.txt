@@ -1,21 +1,64 @@
-requests
-openai
-python-dotenv
-qdrant_client
-neo4j
-scikit-learn
-numpy
-jieba
-spacy
-# python -m spacy download zh_core_web_sm
-# python -m spacy download en_core_web_sm
-tiktoken >= 0.9.0
+# =============================================================================
+# Lingye_Agent - Python 依赖清单
+# =============================================================================
+# 安装：pip install -r requirements.txt
+#
+# 说明：
+#   - 核心依赖（必装）：底部分组之外的均为必装
+#   - 可选依赖：按需安装，可注释掉以减少体积
+#   - 模型权重不在 pip 内：sentence-transformers 模型、CLIP/CLAP、spaCy 中英文模型
+#     需另行下载（参考 .env.example 与 README.md）
+# =============================================================================
 
-sentence-transformers
-dashscope
-qdrant-client>=1.6.0
-neo4j>=5.0.0
-markitdown
-gradio
-markitdown[pdf]
-fastmcp
+# ---------- 核心运行时 ----------
+openai>=1.30.0                  # OpenAI 兼容客户端（多 provider 通用）
+pydantic>=2.5.0                 # 数据模型与配置
+python-dotenv>=1.0.0            # .env 加载
+requests>=2.31.0                # HTTP 客户端
+httpx>=0.27.0                   # Qdrant REST 走 httpx，可显式控制 trust_env
+tiktoken>=0.9.0                 # token 计数（GSSC 上下文预算）
+numpy>=1.26.0                   # 向量计算
+jieba>=0.42.1                   # 中文分词（ContextBuilder 相关性打分）
+
+# ---------- 记忆与 RAG：向量库 + 图库 ----------
+qdrant-client>=1.6.0            # Qdrant 向量数据库 SDK
+neo4j>=5.0.0                    # Neo4j 图数据库 SDK
+
+# ---------- 文档解析（RAG 多格式入库） ----------
+markitdown[pdf]>=0.0.1a3        # PDF / Office / 图片 / 音频 转 Markdown
+
+# ---------- Embedding 与 NLP ----------
+sentence-transformers>=2.5.0    # 本地 embedding + Cross-Encoder reranker
+scikit-learn>=1.3.0             # TF-IDF 兜底嵌入与相似度
+dashscope>=1.14.0               # 阿里云 DashScope（云端 embedding 备选）
+
+# ---------- MCP 协议 ----------
+fastmcp>=2.0.0                  # MCP 客户端 + 内置服务器
+
+# ---------- 前端 UI（示例 App 使用） ----------
+gradio>=4.0.0                   # PDF 学习助手等示例的 Web UI
+
+# =============================================================================
+# 可选依赖（按需取消注释）
+# =============================================================================
+
+# ---------- 中文 / 英文 NLP（语义记忆使用 spaCy 做实体抽取） ----------
+# spacy>=3.7.0
+# 安装后还需下载模型：
+#   python -m spacy download zh_core_web_sm
+#   python -m spacy download en_core_web_sm
+
+# ---------- 多模态感知记忆（PerceptualMemory） ----------
+# transformers>=4.40.0          # CLIP / CLAP 模型加载
+# torch>=2.1.0                  # PyTorch 后端（CPU 或 CUDA 版本按需）
+# Pillow>=10.0.0                # 图像处理
+# librosa>=0.10.0               # 音频处理
+# soundfile>=0.12.0             # 音频读写
+
+# ---------- 高级搜索源（AdvancedSearchTool） ----------
+# tavily-python>=0.3.0          # Tavily AI 搜索（也可走 MCP，无需 SDK）
+# google-search-results>=2.4.2  # SerpApi 搜索
+
+# ---------- 测试 ----------
+# pytest>=8.0.0
+# pytest-asyncio>=0.23.0
