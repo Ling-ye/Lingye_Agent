@@ -1,6 +1,6 @@
 
 from dotenv import load_dotenv
-from core import LingyeLLM
+from lingye_agent.core import LingyeLLM
 
 # 加载环境变量
 load_dotenv()
