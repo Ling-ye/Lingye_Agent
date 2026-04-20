@@ -1040,8 +1040,21 @@ class SemanticMemory(BaseMemory):
                     logger.warning(f"⚠️ Neo4j 删除孤立实体失败 {eid}: {e}")
     
     def has_memory(self, memory_id: str) -> bool:
-        """检查记忆是否存在"""
-        return self._find_memory_by_id(memory_id) is not None
+        """检查记忆是否存在（先查内存缓存，再查 Qdrant 权威库）"""
+        if self._find_memory_by_id(memory_id) is not None:
+            return True
+        # 冷启动后内存缓存为空，但 Qdrant 中可能仍有数据
+        try:
+            if self.vector_store is not None:
+                hits = self.vector_store.search_similar(
+                    query_vector=[0.0] * int(get_dimension()),
+                    limit=1,
+                    where={"memory_id": memory_id, "memory_type": "semantic"},
+                )
+                return bool(hits)
+        except Exception as e:
+            logger.debug(f"semantic.has_memory 回退查询失败 id={memory_id}: {e}")
+        return False
     
     def forget(self, strategy: str = "importance_based", threshold: float = 0.1, max_age_days: int = 30) -> int:
         """语义记忆遗忘机制（硬删除）"""
@@ -1082,15 +1095,20 @@ class SemanticMemory(BaseMemory):
         return forgotten_count
 
     def clear(self):
-        """清空所有语义记忆 - 包括专业数据库"""
+        """清空所有语义记忆 - 包括专业数据库
+
+        注意：semantic / episodic 默认共用同一个 Qdrant collection，
+        所以这里**只能**按 `memory_type=semantic` 过滤删除，绝不能 clear_collection()，
+        否则会误删 episodic 的所有向量。
+        """
         try:
-            # 清空Qdrant向量数据库
+            # 仅删除 memory_type=semantic 的向量，避免误伤 episodic
             if self.vector_store:
-                success = self.vector_store.clear_collection()
+                success = self.vector_store.delete_by_payload({"memory_type": "semantic"})
                 if success:
-                    logger.info("✅ Qdrant向量数据库已清空")
+                    logger.info("✅ Qdrant 已清空 (memory_type=semantic)")
                 else:
-                    logger.warning("⚠️ Qdrant清空失败")
+                    logger.warning("⚠️ Qdrant 按 payload 清空失败")
             
             # 清空Neo4j图数据库
             if self.graph_store:

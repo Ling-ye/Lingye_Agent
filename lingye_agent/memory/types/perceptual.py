@@ -202,8 +202,8 @@ class PerceptualMemory(BaseMemory):
                 }],
                 ids=[memory_item.id]
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ 感知记忆向量入库失败 id={memory_item.id} modality={modality}: {e}")
 
         return memory_item.id
     
@@ -366,17 +366,22 @@ class PerceptualMemory(BaseMemory):
         # 权威库删除
         self.doc_store.delete_memory(memory_id)
         # 向量库删除（所有模态集合尝试删除）
-        for store in self.vector_stores.values():
+        for mod, store in self.vector_stores.items():
             try:
                 store.delete_memories([memory_id])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"⚠️ 感知记忆向量删除失败 modality={mod} id={memory_id}: {e}")
 
         return removed
     
     def has_memory(self, memory_id: str) -> bool:
-        """检查记忆是否存在"""
-        return any(memory.id == memory_id for memory in self.perceptual_memories)
+        """检查记忆是否存在（先查内存缓存，再查 SQLite 权威库）"""
+        if any(memory.id == memory_id for memory in self.perceptual_memories):
+            return True
+        try:
+            return self.doc_store.get_memory(memory_id) is not None
+        except Exception:
+            return False
     
     def forget(self, strategy: str = "importance_based", threshold: float = 0.1, max_age_days: int = 30) -> int:
         """感知记忆遗忘机制（硬删除）"""
@@ -427,12 +432,12 @@ class PerceptualMemory(BaseMemory):
         for mid in ids:
             self.doc_store.delete_memory(mid)
         # 删除Qdrant向量（所有模态集合）
-        for store in self.vector_stores.values():
+        for mod, store in self.vector_stores.items():
             try:
                 if ids:
                     store.delete_memories(ids)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"⚠️ 清空感知记忆时 Qdrant 批量删除失败 modality={mod}: {e}")
 
     def get_all(self) -> List[MemoryItem]:
         """获取所有感知记忆"""
@@ -448,8 +453,9 @@ class PerceptualMemory(BaseMemory):
         for mod, store in self.vector_stores.items():
             try:
                 vs_stats_all[mod] = store.get_collection_stats()
-            except Exception:
-                vs_stats_all[mod] = {"store_type": "qdrant"}
+            except Exception as e:
+                logger.warning(f"⚠️ 获取感知记忆向量统计失败 modality={mod}: {e}")
+                vs_stats_all[mod] = {"store_type": "qdrant", "error": str(e)}
         db_stats = self.doc_store.get_database_stats()
         
         return {

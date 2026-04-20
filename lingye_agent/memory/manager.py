@@ -5,11 +5,33 @@ from datetime import datetime
 import uuid
 import logging
 
-from .base import MemoryItem, MemoryConfig
+from .base import MemoryItem, MemoryConfig, BaseMemory
 from .types.working import WorkingMemory
 from .types.episodic import EpisodicMemory
 from .types.semantic import SemanticMemory
 from .types.perceptual import PerceptualMemory
+
+
+class _ImportanceHelper(BaseMemory):
+    """仅用于借助 BaseMemory._calculate_importance 共享实现的辅助壳。
+
+    BaseMemory 是抽象类，但 Manager 不需要真正的存储能力，
+    这里给所有 abstract 方法提供空实现以便实例化 helper。
+    """
+    def add(self, memory_item):
+        raise NotImplementedError
+    def retrieve(self, query, limit=5, **kwargs):
+        return []
+    def update(self, memory_id, content=None, importance=None, metadata=None):
+        return False
+    def remove(self, memory_id):
+        return False
+    def has_memory(self, memory_id):
+        return False
+    def clear(self):
+        pass
+    def get_stats(self):
+        return {}
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +56,10 @@ class MemoryManager:
     ):
         self.config = config or MemoryConfig()
         self.user_id = user_id
-        
+
+        # 共享 importance 计算（避免与 BaseMemory 重复实现）
+        self._importance_helper = _ImportanceHelper(self.config)
+
         # 初始化各类型记忆
         self.memory_types = {}
         
@@ -224,11 +249,20 @@ class MemoryManager:
             遗忘的记忆数量
         """
         total_forgotten = 0
-        
+
         for memory_type, memory_instance in self.memory_types.items():
-            if hasattr(memory_instance, 'forget'):
+            if not hasattr(memory_instance, 'forget'):
+                continue
+            try:
                 forgotten = memory_instance.forget(strategy, threshold, max_age_days)
-                total_forgotten += forgotten
+            except Exception as e:
+                logger.warning(f"⚠️ {memory_type} 遗忘失败已跳过: {e}")
+                continue
+            # 兼容某些实现可能返回 None / 非 int
+            try:
+                total_forgotten += int(forgotten or 0)
+            except (TypeError, ValueError):
+                logger.warning(f"⚠️ {memory_type}.forget 返回值不可累加: {forgotten!r}")
 
         logger.info(f"记忆遗忘完成: {total_forgotten} 条记忆")
         return total_forgotten
@@ -342,26 +376,8 @@ class MemoryManager:
         return any(keyword in content for keyword in semantic_keywords)
     
     def _calculate_importance(self, content: str, metadata: Optional[Dict[str, Any]]) -> float:
-        """计算记忆重要性"""
-        importance = 0.5  # 基础重要性
-        
-        # 基于内容长度
-        if len(content) > 100:
-            importance += 0.1
-        
-        # 基于关键词
-        important_keywords = ["重要", "关键", "必须", "注意", "警告", "错误"]
-        if any(keyword in content for keyword in important_keywords):
-            importance += 0.2
-        
-        # 基于元数据
-        if metadata:
-            if metadata.get("priority") == "high":
-                importance += 0.3
-            elif metadata.get("priority") == "low":
-                importance -= 0.2
-        
-        return max(0.0, min(1.0, importance))
+        """计算记忆重要性（统一委托给 BaseMemory._calculate_importance）"""
+        return self._importance_helper._calculate_importance(content, metadata=metadata)
     
 
     def __str__(self) -> str:

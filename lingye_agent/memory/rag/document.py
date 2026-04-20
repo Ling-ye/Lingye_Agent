@@ -164,37 +164,44 @@ class DocumentProcessor:
     def merge_chunks(self, chunks: List[DocumentChunk], max_length: int = 2000) -> List[DocumentChunk]:
         """
         合并小的文档块
-        
+
         Args:
             chunks: 文档块列表
             max_length: 合并后的最大长度
-            
+
         Returns:
-            合并后的文档块列表
+            合并后的文档块列表（其中 metadata.total_chunks / chunk_index 会被重算到正确值）
         """
         if not chunks:
             return []
-        
-        merged_chunks = []
+
+        merged_chunks: List[DocumentChunk] = []
         current_chunk = chunks[0]
-        
+
         for next_chunk in chunks[1:]:
-            # 检查是否可以合并
             combined_length = len(current_chunk.content) + len(next_chunk.content)
-            
-            if (combined_length <= max_length and 
-                current_chunk.doc_id == next_chunk.doc_id):
+            if combined_length <= max_length and current_chunk.doc_id == next_chunk.doc_id:
                 # 合并块
                 current_chunk.content += "\n" + next_chunk.content
-                current_chunk.metadata["total_chunks"] = current_chunk.metadata.get("total_chunks", 1) + 1
             else:
-                # 不能合并，保存当前块
                 merged_chunks.append(current_chunk)
                 current_chunk = next_chunk
-        
-        # 添加最后一个块
+
         merged_chunks.append(current_chunk)
-        
+
+        # 合并完成后重算 chunk_index 与 total_chunks（按 doc_id 分组），
+        # 旧实现里 total_chunks 用 +1 累加是错的
+        total_per_doc: Dict[str, int] = {}
+        for ch in merged_chunks:
+            total_per_doc[ch.doc_id] = total_per_doc.get(ch.doc_id, 0) + 1
+        index_per_doc: Dict[str, int] = {}
+        for ch in merged_chunks:
+            idx = index_per_doc.get(ch.doc_id, 0)
+            ch.chunk_index = idx
+            ch.metadata["chunk_index"] = idx
+            ch.metadata["total_chunks"] = total_per_doc[ch.doc_id]
+            index_per_doc[ch.doc_id] = idx + 1
+
         return merged_chunks
     
     def filter_chunks(self, chunks: List[DocumentChunk], min_length: int = 50) -> List[DocumentChunk]:

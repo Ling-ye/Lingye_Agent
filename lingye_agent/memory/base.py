@@ -148,26 +148,36 @@ class BaseMemory(ABC):
         import uuid
         return str(uuid.uuid4())
 
-    def _calculate_importance(self, content: str, base_importance: float = 0.5) -> float:
-        """计算记忆重要性
+    def _calculate_importance(
+        self,
+        content: str,
+        metadata: Dict[str, Any] = None,
+        base_importance: float = 0.5,
+    ) -> float:
+        """计算记忆重要性（共享实现，子类与 Manager 都应复用此方法）
 
-        Args:
-            content: 记忆内容
-            base_importance: 基础重要性
-
-        Returns:
-            计算后的重要性分数
+        规则：
+        - 基础分 base_importance（默认 0.5）
+        - 内容长度 > 100：+0.1
+        - 包含关键词（重要/关键/必须/注意/警告/错误）：+0.2
+        - metadata.priority == "high": +0.3；"low": -0.2
+        - 最终夹紧到 [0, 1]
         """
         importance = base_importance
 
-        # 基于内容长度
         if len(content) > 100:
             importance += 0.1
 
-        # 基于关键词
         important_keywords = ["重要", "关键", "必须", "注意", "警告", "错误"]
         if any(keyword in content for keyword in important_keywords):
             importance += 0.2
+
+        if metadata:
+            priority = metadata.get("priority")
+            if priority == "high":
+                importance += 0.3
+            elif priority == "low":
+                importance -= 0.2
 
         return max(0.0, min(1.0, importance))
 

@@ -143,9 +143,9 @@ class EpisodicMemory(BaseMemory):
                 }],
                 ids=[memory_item.id]
             )
-        except Exception:
-            # 向量入库失败不影响权威存储
-            pass
+        except Exception as e:
+            # 向量入库失败不影响权威存储；但必须打日志，否则 SQLite/Qdrant 会静默不一致
+            logger.warning(f"⚠️ 情景记忆向量入库失败 id={memory_item.id}: {e}")
 
         return memory_item.id
     
@@ -255,7 +255,6 @@ class EpisodicMemory(BaseMemory):
 
         # 若向量检索无结果，回退到简单关键词匹配（内存缓存）
         if not results:
-            fallback = super()._generate_id  # 占位以避免未使用警告
             query_lower = query.lower()
             for ep in self._filter_episodes(user_id, session_id, time_range):
                 if query_lower in ep.content.lower():
@@ -335,8 +334,8 @@ class EpisodicMemory(BaseMemory):
                     metadata=[payload],
                     ids=[memory_id]
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"⚠️ 情景记忆向量更新失败 id={memory_id}: {e}")
 
         return updated or doc_updated
     
@@ -360,9 +359,9 @@ class EpisodicMemory(BaseMemory):
         # 向量库删除
         try:
             self.vector_store.delete_memories([memory_id])
-        except Exception:
-            pass
-        
+        except Exception as e:
+            logger.warning(f"⚠️ 情景记忆向量删除失败 id={memory_id}: {e}")
+
         return removed or doc_deleted
     
     def has_memory(self, memory_id: str) -> bool:
@@ -391,8 +390,8 @@ class EpisodicMemory(BaseMemory):
         try:
             if ids:
                 self.vector_store.delete_memories(ids)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ 清空情景记忆时 Qdrant 批量删除失败: {e}")
 
     def forget(self, strategy: str = "importance_based", threshold: float = 0.1, max_age_days: int = 30) -> int:
         """情景记忆遗忘机制（硬删除）"""
@@ -589,25 +588,3 @@ class EpisodicMemory(BaseMemory):
         max_time = max(timestamps)
         
         return (max_time - min_time).days
-    
-    def _persist_episode(self, episode: Episode):
-        """持久化情景到存储后端"""
-        if self.storage and hasattr(self.storage, 'add_memory'):
-            self.storage.add_memory(
-                memory_id=episode.episode_id,
-                user_id=episode.user_id,
-                content=episode.content,
-                memory_type="episodic",
-                timestamp=int(episode.timestamp.timestamp()),
-                importance=episode.importance,
-                properties={
-                    "session_id": episode.session_id,
-                    "context": episode.context,
-                    "outcome": episode.outcome
-                }
-            )
-    
-    def _remove_from_storage(self, memory_id: str):
-        """从存储后端删除"""
-        if self.storage and hasattr(self.storage, 'delete_memory'):
-            self.storage.delete_memory(memory_id)

@@ -237,44 +237,57 @@ def _approx_token_len(text: str) -> int:
 
 
 def _split_paragraphs_with_headings(text: str) -> List[Dict]:
-    lines = text.splitlines()
+    """按 markdown 标题切段并保留 heading 路径与**真实**字符偏移。
+
+    与旧实现的差别：旧实现用 `end_pos - len(content)` 反推 start，遇到
+    跨多行段落或被 strip 的空白会偏；这里在第一行加入 buf 时记录
+    `buf_start`，确保 start/end 与原始 `text` 中的实际位置一致。
+    """
+    lines = text.splitlines(keepends=True)  # 保留换行符以便按 cumulative 偏移
     heading_stack: List[str] = []
     paragraphs: List[Dict] = []
     buf: List[str] = []
+    buf_start: Optional[int] = None
     char_pos = 0
+
     def flush_buf(end_pos: int):
-        if not buf:
+        nonlocal buf, buf_start
+        if not buf or buf_start is None:
+            buf, buf_start = [], None
             return
-        content = "\n".join(buf).strip()
-        if not content:
-            return
-        paragraphs.append({
-            "content": content,
-            "heading_path": " > ".join(heading_stack) if heading_stack else None,
-            "start": max(0, end_pos - len(content)),
-            "end": end_pos,
-        })
+        joined = "".join(buf)  # 含原始换行
+        # 内容用 strip 显示，但偏移仍记录原始范围
+        content = joined.strip()
+        if content:
+            paragraphs.append({
+                "content": content,
+                "heading_path": " > ".join(heading_stack) if heading_stack else None,
+                "start": buf_start,
+                "end": end_pos,
+            })
+        buf, buf_start = [], None
+
     for ln in lines:
-        raw = ln
-        if raw.strip().startswith("#"):
-            # heading line
+        ln_no_nl = ln.rstrip("\n").rstrip("\r")
+        if ln_no_nl.strip().startswith("#"):
             flush_buf(char_pos)
-            level = len(raw) - len(raw.lstrip('#'))
-            title = raw.lstrip('#').strip()
+            level = len(ln_no_nl) - len(ln_no_nl.lstrip("#"))
+            title = ln_no_nl.lstrip("#").strip()
             if level <= 0:
                 level = 1
             if level <= len(heading_stack):
-                heading_stack = heading_stack[:level-1]
+                heading_stack = heading_stack[: level - 1]
             heading_stack.append(title)
-            char_pos += len(raw) + 1
+            char_pos += len(ln)
             continue
-        # paragraph accumulation
-        if raw.strip() == "":
+        if ln_no_nl.strip() == "":
             flush_buf(char_pos)
-            buf = []
         else:
-            buf.append(raw)
-        char_pos += len(raw) + 1
+            if buf_start is None:
+                buf_start = char_pos
+            buf.append(ln)
+        char_pos += len(ln)
+
     flush_buf(char_pos)
     if not paragraphs:
         paragraphs = [{"content": text, "heading_path": None, "start": 0, "end": len(text)}]
@@ -1184,8 +1197,8 @@ def compress_ranked_items(ranked_items: List[Dict], enable_compression: bool = T
                 # keep the higher score
                 try:
                     last["score"] = max(float(last.get("score", 0.0)), float(it.get("score", 0.0)))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"compress_ranked_items: 合并 score 失败已忽略: {e}")
             last_by_doc[did] = last
         else:
             cnt = by_doc_count.get(did, 0)

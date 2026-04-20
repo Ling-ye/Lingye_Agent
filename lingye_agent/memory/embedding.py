@@ -52,8 +52,8 @@ def _embedding_base_url_is_openai_compatible(base_url: str) -> bool:
         path = (p.path or "").rstrip("/") or "/"
         if host == "dashscope.aliyuncs.com" and path == "/api/v1":
             return False
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"_embedding_base_url_is_openai_compatible 解析失败 base_url={base_url}: {e}")
     return True
 
 
@@ -125,16 +125,16 @@ class LocalTransformerEmbedding(EmbeddingModel):
             single = False
 
         if self._backend == "st":
-            vecs = self._st_model.encode(inputs)
-            if hasattr(vecs, "tolist"):
-                vecs = [v for v in vecs]
+            raw = self._st_model.encode(inputs)
+            # sentence-transformers 返回 ndarray (n, d)
+            vecs = [list(v) if hasattr(v, "__iter__") else [float(v)] for v in raw]
         else:
             import torch
             tokenized = self._hf_tokenizer(inputs, return_tensors="pt", padding=True, truncation=True, max_length=512)
             with torch.no_grad():
                 outputs = self._hf_model(**tokenized)
                 embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
-            vecs = [v for v in embeddings]
+            vecs = [list(v) for v in embeddings]
 
         if single:
             return vecs[0]

@@ -316,8 +316,12 @@ class RAGTool(Tool):
             if not text or not text.strip():
                 return "❌ 文本内容不能为空"
             
-            # 创建临时文件
-            document_id = document_id or f"text_{abs(hash(text)) % 100000}"
+            # 创建临时文件；用 md5 而不是 hash() 保证跨进程稳定且不易碰撞
+            if not document_id:
+                import hashlib as _hashlib
+                document_id = "text_" + _hashlib.md5(
+                    text.encode("utf-8", errors="replace")
+                ).hexdigest()[:16]
             tmp_path = os.path.join(self.knowledge_base_path, f"{document_id}.md")
             
             try:
