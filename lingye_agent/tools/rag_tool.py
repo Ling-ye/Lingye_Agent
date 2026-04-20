@@ -666,7 +666,7 @@ class RAGTool(Tool):
 
     @tool_action("rag_clear", "清空知识库（危险操作，请谨慎使用）")
     def _clear_knowledge_base(self, confirm: bool = False, namespace: str = "default") -> str:
-        """清空知识库
+        """清空知识库（仅清当前命名空间，不会影响其它 namespace）
 
         Args:
             confirm: 确认执行（必须设置为True）
@@ -678,17 +678,22 @@ class RAGTool(Tool):
         try:
             if not confirm:
                 return (
-                    "⚠️ 危险操作：清空知识库将删除所有数据！\n"
+                    "⚠️ 危险操作：清空知识库将删除该命名空间下的所有数据！\n"
                     "请使用 confirm=true 参数确认执行。"
                 )
-            
+
             pipeline = self._get_pipeline(namespace)
             store = pipeline.get("store")
             namespace_id = pipeline.get("namespace", self.rag_namespace)
-            success = store.clear_collection() if store else False
-            
+
+            if not store:
+                return "❌ 清空知识库失败：未初始化向量存储"
+
+            # 仅删除当前 namespace 的向量，避免误删同一 collection 内其它 namespace 的数据
+            success = store.delete_by_payload({"rag_namespace": namespace_id})
+
             if success:
-                # 重新初始化该命名空间
+                # 重新初始化该命名空间（pipeline 内部缓存等）
                 self._pipelines[namespace_id] = create_rag_pipeline(
                     qdrant_url=self.qdrant_url,
                     qdrant_api_key=self.qdrant_api_key,
@@ -698,7 +703,7 @@ class RAGTool(Tool):
                 return f"✅ 知识库已成功清空（命名空间：{namespace_id}）"
             else:
                 return "❌ 清空知识库失败"
-            
+
         except Exception as e:
             return f"❌ 清空知识库失败: {str(e)}"
 

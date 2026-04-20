@@ -903,70 +903,98 @@ class SemanticMemory(BaseMemory):
         memory = self._find_memory_by_id(memory_id)
         if not memory:
             return False
-        
+
         try:
+            content_changed = False
+
             if content is not None:
                 # 重新生成嵌入和提取实体
                 embedding = self.embedding_model.encode(content)
                 self.memory_embeddings[memory_id] = embedding
-                
+
                 # 清理旧的实体关系
                 old_entities = memory.metadata.get("entities", [])
                 self._cleanup_entities_and_relations(old_entities)
-                
+
                 # 提取新的实体和关系
                 memory.content = content
                 entities = self._extract_entities(content)
                 relations = self._extract_relations(content, entities)
-                
+
                 # 更新知识图谱
                 for entity in entities:
                     self._add_or_update_entity(entity)
                 for relation in relations:
                     self._add_or_update_relation(relation)
-                
+
                 # 更新元数据
                 memory.metadata["entities"] = [e.entity_id for e in entities]
                 memory.metadata["relations"] = [
                     f"{r.from_entity}-{r.relation_type}-{r.to_entity}" for r in relations
                 ]
-                
+                content_changed = True
+
             if importance is not None:
                 memory.importance = importance
-            
+
             if metadata is not None:
                 memory.metadata.update(metadata)
-                
-                return True
-            
+
+            # 内容变更后，把新向量同步回 Qdrant，否则检索仍用旧向量
+            if content_changed:
+                try:
+                    new_meta = {
+                        "memory_id": memory.id,
+                        "user_id": memory.user_id,
+                        "content": memory.content,
+                        "memory_type": memory.memory_type,
+                        "timestamp": int(memory.timestamp.timestamp()),
+                        "importance": memory.importance,
+                        "entities": memory.metadata.get("entities", []),
+                        "entity_count": len(memory.metadata.get("entities", [])),
+                        "relation_count": len(memory.metadata.get("relations", [])),
+                    }
+                    new_vec = self.memory_embeddings[memory_id]
+                    if hasattr(new_vec, "tolist"):
+                        new_vec = new_vec.tolist()
+                    self.vector_store.add_vectors(
+                        vectors=[new_vec],
+                        metadata=[new_meta],
+                        ids=[memory.id],
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ 同步语义记忆向量失败: {e}")
+
+            return True
+
         except Exception as e:
             logger.error(f"❌ 更新记忆失败: {e}")
-        return False
+            return False
     
     def remove(self, memory_id: str) -> bool:
         """删除语义记忆"""
         memory = self._find_memory_by_id(memory_id)
         if not memory:
             return False
-        
+
         try:
             # 删除向量
             self.vector_store.delete_memories([memory_id])
-            
+
             # 清理实体和关系
             entities = memory.metadata.get("entities", [])
             self._cleanup_entities_and_relations(entities)
-            
+
             # 删除记忆
             self.semantic_memories.remove(memory)
             if memory_id in self.memory_embeddings:
                 del self.memory_embeddings[memory_id]
-                
-                return True
-            
+
+            return True
+
         except Exception as e:
             logger.error(f"❌ 删除记忆失败: {e}")
-        return False
+            return False
     
     def _cleanup_entities_and_relations(self, entity_ids: List[str]):
         """清理实体和关系"""

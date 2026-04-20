@@ -539,6 +539,38 @@ class QdrantVectorStore:
         except Exception as e:
             logger.error(f"❌ 删除记忆失败: {e}")
             raise
+
+    def delete_by_payload(self, payload_filter: Dict[str, Any]) -> bool:
+        """
+        按 payload 字段精确匹配删除点（must 全部命中）。
+
+        用于多命名空间场景：例如只删除 rag_namespace=xxx 的所有点，
+        避免误删整个集合。
+
+        Args:
+            payload_filter: 形如 {"rag_namespace": "default"} 的精确匹配条件
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            if not payload_filter:
+                logger.warning("delete_by_payload 收到空过滤条件，已拒绝（避免误删全部）")
+                return False
+            conditions = [
+                FieldCondition(key=k, match=MatchValue(value=v))
+                for k, v in payload_filter.items()
+            ]
+            query_filter = Filter(must=conditions)
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.FilterSelector(filter=query_filter),
+                wait=True,
+            )
+            logger.info(f"✅ 成功按payload删除: {payload_filter}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ 按payload删除失败: {e}")
+            return False
     
     def get_collection_info(self) -> Dict[str, Any]:
         """

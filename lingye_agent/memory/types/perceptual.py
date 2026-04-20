@@ -326,7 +326,9 @@ class PerceptualMemory(BaseMemory):
             try:
                 perception = self._encode_perception(raw or "", modality, memory_id)
                 payload = self.doc_store.get_memory(memory_id) or {}
-                self.vector_store.add_vectors(
+                # 按模态选择对应的Qdrant集合（与add()保持一致）
+                store = self._get_vector_store_for_modality(modality)
+                store.add_vectors(
                     vectors=[perception.encoding],
                     metadata=[{
                         "memory_id": memory_id,
@@ -338,8 +340,8 @@ class PerceptualMemory(BaseMemory):
                     }],
                     ids=[memory_id]
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"⚠️ 更新感知记忆向量失败: {e}")
 
         return updated
     

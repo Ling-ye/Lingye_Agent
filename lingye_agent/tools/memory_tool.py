@@ -362,33 +362,44 @@ class MemoryTool(Tool):
         这个方法可以被Agent调用来自动记录对话历史
         """
         self.conversation_count += 1
+
+        # 确保会话ID存在
+        if self.current_session_id is None:
+            self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        base_meta = {
+            "session_id": self.current_session_id,
+            "timestamp": datetime.now().isoformat(),
+            "conversation_id": self.conversation_count,
+        }
+
         # 记录用户输入
-        self._add_memory(
+        self.memory_manager.add_memory(
             content=f"用户: {user_input}",
             memory_type="working",
             importance=0.6,
-            type="user_input",
-            conversation_id=self.conversation_count
+            metadata={**base_meta, "type": "user_input"},
+            auto_classify=False,
         )
 
         # 记录Agent响应
-        self._add_memory(
+        self.memory_manager.add_memory(
             content=f"助手: {agent_response}",
             memory_type="working",
             importance=0.7,
-            type="agent_response",
-            conversation_id=self.conversation_count
+            metadata={**base_meta, "type": "agent_response"},
+            auto_classify=False,
         )
 
         # 如果是重要对话，记录为情景记忆
         if len(agent_response) > 100 or "重要" in user_input or "记住" in user_input:
             interaction_content = f"对话 - 用户: {user_input}\n助手: {agent_response}"
-            self._add_memory(
+            self.memory_manager.add_memory(
                 content=interaction_content,
                 memory_type="episodic",
                 importance=0.8,
-                type="interaction",
-                conversation_id=self.conversation_count
+                metadata={**base_meta, "type": "interaction"},
+                auto_classify=False,
             )
 
     @tool_action("memory_update", "更新已存在的记忆")
@@ -493,13 +504,25 @@ class MemoryTool(Tool):
 
         便捷方法，用于添加重要知识
         """
-        return self._add_memory(
-            content=content,
-            memory_type="semantic",
-            importance=importance,
-            knowledge_type="factual",
-            source="manual"
-        )
+        if self.current_session_id is None:
+            self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        try:
+            memory_id = self.memory_manager.add_memory(
+                content=content,
+                memory_type="semantic",
+                importance=importance,
+                metadata={
+                    "session_id": self.current_session_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "knowledge_type": "factual",
+                    "source": "manual",
+                },
+                auto_classify=False,
+            )
+            return f"✅ 知识已添加 (ID: {memory_id})"
+        except Exception as e:
+            return f"❌ 添加知识失败: {str(e)}"
 
     def get_context_for_query(self, query: str, limit: int = 3) -> str:
         """为查询获取相关上下文
