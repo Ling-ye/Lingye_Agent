@@ -11,6 +11,9 @@ import sqlite3
 import json
 import os
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentStore(ABC):
@@ -109,15 +112,20 @@ class SQLiteDocumentStore(DocumentStore):
         if abs_path not in self._initialized_dbs:
             self._init_database()
             self._initialized_dbs.add(abs_path)
-            print(f"[OK] SQLite 文档存储初始化完成: {db_path}")
+            logger.info(f"[OK] SQLite 文档存储初始化完成: {db_path}")
         
         self._initialized = True
     
     def _get_connection(self):
-        """获取线程本地连接"""
+        """获取线程本地连接（启用外键约束）"""
         if not hasattr(self.local, 'connection'):
             self.local.connection = sqlite3.connect(self.db_path)
             self.local.connection.row_factory = sqlite3.Row  # 使结果可以按列名访问
+            # SQLite 默认不强制外键，需显式开启，否则 ON DELETE CASCADE 等失效
+            try:
+                self.local.connection.execute("PRAGMA foreign_keys = ON")
+            except Exception as e:
+                logger.debug(f"开启 SQLite 外键失败: {e}")
         return self.local.connection
     
     def _init_database(self):
@@ -204,7 +212,7 @@ class SQLiteDocumentStore(DocumentStore):
             cursor.execute(index_sql)
         
         conn.commit()
-        print("[OK] SQLite 数据库表和索引创建完成")
+        logger.info("[OK] SQLite 数据库表和索引创建完成")
     
     def add_memory(
         self,
@@ -453,4 +461,4 @@ class SQLiteDocumentStore(DocumentStore):
         if hasattr(self.local, 'connection'):
             self.local.connection.close()
             delattr(self.local, 'connection')
-            print("[OK] SQLite 连接已关闭")
+            logger.info("[OK] SQLite 连接已关闭")

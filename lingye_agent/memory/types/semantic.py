@@ -18,9 +18,16 @@ from ..base import BaseMemory, MemoryItem, MemoryConfig
 from ..embedding import get_text_embedder, get_dimension
 
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _to_vector_list(v) -> List[float]:
+    """统一把任意嵌入返回（ndarray 或 list）转换为 List[float]，避免 .tolist() 在 list 上报错。"""
+    if v is None:
+        return []
+    if hasattr(v, "tolist"):
+        return list(v.tolist())
+    return list(v)
 
 class Entity:
     """实体类"""
@@ -138,7 +145,8 @@ class SemanticMemory(BaseMemory):
     
     def _init_databases(self):
         """初始化专业数据库存储（支持部分降级运行）"""
-        from core import get_database_config
+        # 用包内绝对导入，避免依赖运行目录
+        from ...core import get_database_config
         db_config = get_database_config()
         
         # 初始化Qdrant向量数据库（核心组件，失败则抛出异常）
@@ -249,7 +257,7 @@ class SemanticMemory(BaseMemory):
             }
             
             success = self.vector_store.add_vectors(
-                vectors=[embedding.tolist()],
+                vectors=[_to_vector_list(embedding)],
                 metadata=[metadata],
                 ids=[memory_item.id]
             )
@@ -360,7 +368,7 @@ class SemanticMemory(BaseMemory):
 
             # Qdrant向量检索
             results = self.vector_store.search_similar(
-                query_vector=query_embedding.tolist(),
+                query_vector=_to_vector_list(query_embedding),
                 limit=limit,
                 where=where_filter if where_filter else None
             )
@@ -954,9 +962,7 @@ class SemanticMemory(BaseMemory):
                         "entity_count": len(memory.metadata.get("entities", [])),
                         "relation_count": len(memory.metadata.get("relations", [])),
                     }
-                    new_vec = self.memory_embeddings[memory_id]
-                    if hasattr(new_vec, "tolist"):
-                        new_vec = new_vec.tolist()
+                    new_vec = _to_vector_list(self.memory_embeddings[memory_id])
                     self.vector_store.add_vectors(
                         vectors=[new_vec],
                         metadata=[new_meta],
@@ -997,10 +1003,41 @@ class SemanticMemory(BaseMemory):
             return False
     
     def _cleanup_entities_and_relations(self, entity_ids: List[str]):
-        """清理实体和关系"""
-        # 这里可以实现更智能的清理逻辑
-        # 例如，如果实体不再被任何记忆引用，则删除它
-        pass
+        """清理实体和关系（基于引用计数：仅当没有任何记忆再引用该实体时才真正删除）
+
+        约定：每条 SemanticMemory 在 metadata["entities"] 中记录其引用的 entity_id 列表。
+        本方法会：
+        1) 在本地缓存里重建 entity_id -> 引用次数；
+        2) 不再被引用的实体：从本地 self.entities / self.relations 移除；
+           若 Neo4j 可用，DETACH DELETE 该实体节点（其相关关系一并删除）。
+        """
+        if not entity_ids:
+            return
+
+        # 统计当前所有记忆对实体的引用
+        ref_count: Dict[str, int] = {}
+        for mem in self.semantic_memories:
+            for eid in mem.metadata.get("entities", []) or []:
+                ref_count[eid] = ref_count.get(eid, 0) + 1
+
+        for eid in set(entity_ids):
+            if ref_count.get(eid, 0) > 0:
+                # 仍有其他记忆引用，保留
+                continue
+
+            # 本地缓存清理
+            self.entities.pop(eid, None)
+            self.relations = [
+                r for r in self.relations
+                if r.from_entity != eid and r.to_entity != eid
+            ]
+
+            # Neo4j 清理（图存储不可用就跳过）
+            if self.graph_store is not None:
+                try:
+                    self.graph_store.delete_entity(eid)
+                except Exception as e:
+                    logger.warning(f"⚠️ Neo4j 删除孤立实体失败 {eid}: {e}")
     
     def has_memory(self, memory_id: str) -> bool:
         """检查记忆是否存在"""
@@ -1074,10 +1111,10 @@ class SemanticMemory(BaseMemory):
         except Exception as e:
             logger.error(f"❌ 清空语义记忆失败: {e}")
             # 即使数据库清空失败，也要清空本地缓存
-        self.semantic_memories.clear()
-        self.memory_embeddings.clear()
-        self.entities.clear()
-        self.relations.clear()
+            self.semantic_memories.clear()
+            self.memory_embeddings.clear()
+            self.entities.clear()
+            self.relations.clear()
 
     def get_all(self) -> List[MemoryItem]:
         """获取所有语义记忆"""
@@ -1175,14 +1212,15 @@ class SemanticMemory(BaseMemory):
                         name=entity_data.get("name", ""),
                         entity_type=entity_data.get("type", "MISC")
                     )
-                
-                    related.append({
+
+                rel_path = entity_data.get("relationship_path") or []
+                related.append({
                     "entity": entity_obj,
-                    "relation_type": entity_data.get("relationship_path", ["RELATED"])[-1] if entity_data.get("relationship_path") else "RELATED",
-                    "strength": 1.0 / max(entity_data.get("distance", 1), 1),  # 距离越近强度越高
-                    "distance": entity_data.get("distance", max_hops)
+                    "relation_type": rel_path[-1] if rel_path else "RELATED",
+                    "strength": 1.0 / max(entity_data.get("distance", 1), 1),
+                    "distance": entity_data.get("distance", max_hops),
                 })
-            
+
             # 按距离和强度排序
             related.sort(key=lambda x: (x["distance"], -x["strength"]))
             

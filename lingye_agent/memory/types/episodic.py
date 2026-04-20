@@ -6,13 +6,9 @@
 - 模式识别能力
 """
 
-from ast import Import
-from imaplib import IMAP4
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import os
-import math
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,7 +78,7 @@ class EpisodicMemory(BaseMemory):
         self.vector_store = QdrantConnectionManager.get_instance(
             url=qdrant_url,
             api_key=qdrant_api_key,
-            collection_name=os.getenv("QDRANT_COLLECTION", "hello_agents_vectors"),
+            collection_name=os.getenv("QDRANT_COLLECTION", "lingye_agents_vectors"),
             vector_size=get_dimension(getattr(self.embedder, 'dimension', 384)),
             distance=os.getenv("QDRANT_DISTANCE", "cosine")
         )
@@ -158,7 +154,15 @@ class EpisodicMemory(BaseMemory):
         user_id = kwargs.get("user_id")
         session_id = kwargs.get("session_id")
         time_range: Optional[Tuple[datetime, datetime]] = kwargs.get("time_range")
-        importance_threshold: Optional[float] = kwargs.get("importance_threshold")
+        # 同时兼容 importance_threshold / min_importance 两种命名
+        importance_threshold: Optional[float] = (
+            kwargs.get("importance_threshold")
+            if kwargs.get("importance_threshold") is not None
+            else kwargs.get("min_importance")
+        )
+        # min_importance=0.0 表示不过滤
+        if importance_threshold == 0:
+            importance_threshold = None
 
         # 结构化过滤候选（来自权威库）
         candidate_ids: Optional[set] = None
@@ -362,8 +366,13 @@ class EpisodicMemory(BaseMemory):
         return removed or doc_deleted
     
     def has_memory(self, memory_id: str) -> bool:
-        """检查记忆是否存在"""
-        return any(episode.episode_id == memory_id for episode in self.episodes)
+        """检查记忆是否存在（先查内存缓存，再查 SQLite 权威库）"""
+        if any(episode.episode_id == memory_id for episode in self.episodes):
+            return True
+        try:
+            return self.doc_store.get_memory(memory_id) is not None
+        except Exception:
+            return False
     
     def clear(self):
         """清空所有情景记忆（仅清理episodic，不影响其他类型）"""
@@ -434,7 +443,11 @@ class EpisodicMemory(BaseMemory):
                 user_id=episode.user_id,
                 timestamp=episode.timestamp,
                 importance=episode.importance,
-                metadata=episode.metadata
+                metadata={
+                    "session_id": episode.session_id,
+                    "context": episode.context,
+                    "outcome": episode.outcome,
+                },
             )
             memory_items.append(memory_item)
         return memory_items
@@ -471,11 +484,11 @@ class EpisodicMemory(BaseMemory):
     
     def find_patterns(self, user_id: str = None, min_frequency: int = 2) -> List[Dict[str, Any]]:
         """发现用户行为模式"""
-        # 检查缓存
+        # 检查缓存（1 小时内有效）
         cache_key = f"{user_id}_{min_frequency}"
-        if (cache_key in self.patterns_cache and 
-            self.last_pattern_analysis and 
-            (datetime.now() - self.last_pattern_analysis).hours < 1):
+        if (cache_key in self.patterns_cache
+                and self.last_pattern_analysis
+                and (datetime.now() - self.last_pattern_analysis).total_seconds() < 3600):
             return self.patterns_cache[cache_key]
         
         # 过滤情景

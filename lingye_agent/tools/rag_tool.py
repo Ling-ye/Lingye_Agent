@@ -88,12 +88,12 @@ class RAGTool(Tool):
             self.llm = LingyeLLM()
 
             self.initialized = True
-            print(f"✅ RAG工具初始化成功: namespace={self.rag_namespace}, collection={self.collection_name}")
-            
+            logger.info(f"✅ RAG工具初始化成功: namespace={self.rag_namespace}, collection={self.collection_name}")
+
         except Exception as e:
             self.initialized = False
             self.init_error = str(e)
-            print(f"❌ RAG工具初始化失败: {e}")
+            logger.error(f"❌ RAG工具初始化失败: {e}")
 
     def _get_pipeline(self, namespace: Optional[str] = None) -> Dict[str, Any]:
         """获取指定命名空间的 RAG 管道，若不存在则自动创建"""
@@ -269,22 +269,24 @@ class RAGTool(Tool):
             chunks_added = pipeline["add_documents"](
                 file_paths=[file_path],
                 chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap
+                chunk_overlap=chunk_overlap,
+                document_id=document_id,
             )
-            
+
             t1 = time.time()
             process_ms = int((t1 - t0) * 1000)
-            
+
             if chunks_added == 0:
                 return f"⚠️ 未能从文件解析内容: {os.path.basename(file_path)}"
-            
+
             return (
                 f"✅ 文档已添加到知识库: {os.path.basename(file_path)}\n"
                 f"📊 分块数量: {chunks_added}\n"
                 f"⏱️ 处理时间: {process_ms}ms\n"
                 f"📝 命名空间: {pipeline.get('namespace', self.rag_namespace)}"
+                + (f"\n🆔 文档ID: {document_id}" if document_id else "")
             )
-            
+
         except Exception as e:
             return f"❌ 添加文档失败: {str(e)}"
     
@@ -328,15 +330,16 @@ class RAGTool(Tool):
                 chunks_added = pipeline["add_documents"](
                     file_paths=[tmp_path],
                     chunk_size=chunk_size,
-                    chunk_overlap=chunk_overlap
+                    chunk_overlap=chunk_overlap,
+                    document_id=document_id,
                 )
-                
+
                 t1 = time.time()
                 process_ms = int((t1 - t0) * 1000)
-                
+
                 if chunks_added == 0:
                     return f"⚠️ 未能从文本生成有效分块"
-                
+
                 return (
                     f"✅ 文本已添加到知识库: {document_id}\n"
                     f"📊 分块数量: {chunks_added}\n"
@@ -410,7 +413,9 @@ class RAGTool(Tool):
             for i, result in enumerate(results, 1):
                 meta = result.get("metadata", {})
                 score = result.get("score", 0.0)
-                content = meta.get("content", "")[:200] + "..."
+                raw_content = meta.get("content", "") or ""
+                # 仅当内容确实超出展示长度时才追加省略号
+                content = raw_content[:200] + ("..." if len(raw_content) > 200 else "")
                 source = meta.get("source_path", "unknown")
                 
                 # 安全处理Unicode
@@ -471,7 +476,7 @@ class RAGTool(Tool):
                 return "❌ 请提供要询问的问题"
 
             user_question = question.strip()
-            print(f"🔍 智能问答: {user_question}")
+            logger.info(f"🔍 智能问答: {user_question}")
             logger.info(
                 "RAG ask: 开始 | namespace=%s | question_preview=%s",
                 namespace,
@@ -925,7 +930,7 @@ class RAGTool(Tool):
         start_time = time.time()
         
         for i, file_path in enumerate(file_paths, 1):
-            print(f"📄 处理文档 {i}/{len(file_paths)}: {os.path.basename(file_path)}")
+            logger.info(f"📄 处理文档 {i}/{len(file_paths)}: {os.path.basename(file_path)}")
             
             try:
                 result = self.add_document(file_path, namespace)
@@ -975,7 +980,7 @@ class RAGTool(Tool):
         
         for i, text in enumerate(texts):
             doc_id = document_ids[i] if document_ids else f"batch_text_{i+1}"
-            print(f"📝 处理文本 {i+1}/{len(texts)}: {doc_id}")
+            logger.info(f"📝 处理文本 {i+1}/{len(texts)}: {doc_id}")
             
             try:
                 result = self.add_text(text, namespace, doc_id)

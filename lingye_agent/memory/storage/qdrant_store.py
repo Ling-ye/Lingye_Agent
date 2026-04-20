@@ -26,6 +26,27 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# 用于把任意业务 ID 稳定映射成 UUID5（确定性，可重复）
+_POINT_ID_NAMESPACE = uuid.UUID("6f2c1c3a-2c58-4b3a-9b50-1c7c3a3b9b7e")
+
+
+def _to_qdrant_point_id(point_id: Any) -> Any:
+    """将业务侧 ID 归一化为 Qdrant 接受的 ID 类型。
+
+    - int 直接返回；
+    - 已是合法 UUID 字符串：直接返回；
+    - 其它字符串：用 UUID5 做确定性映射，保证同一业务 ID 始终映射到同一 point_id。
+    """
+    if isinstance(point_id, int):
+        return point_id
+    if isinstance(point_id, str):
+        try:
+            uuid.UUID(point_id)
+            return point_id
+        except Exception:
+            return str(uuid.uuid5(_POINT_ID_NAMESPACE, point_id))
+    return str(uuid.uuid5(_POINT_ID_NAMESPACE, str(point_id)))
+
 
 def _env_truthy(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -62,29 +83,30 @@ def _qdrant_client_network_kwargs() -> Dict[str, Any]:
 
 class QdrantConnectionManager:
     """Qdrant连接管理器 - 防止重复连接和初始化"""
-    _instances = {}  # key: (url, collection_name) -> QdrantVectorStore instance
+    _instances = {}  # key: (url, collection_name, vector_size, distance) -> QdrantVectorStore
     _lock = threading.Lock()
-    
+
     @classmethod
     def get_instance(
-        cls, 
+        cls,
         url: Optional[str] = None,
         api_key: Optional[str] = None,
-        collection_name: str = "hello_agents_vectors",
+        collection_name: str = "lingye_agents_vectors",
         vector_size: int = 384,
         distance: str = "cosine",
         timeout: int = 30,
         **kwargs
     ) -> 'QdrantVectorStore':
-        """获取或创建Qdrant实例（单例模式）"""
-        # 创建唯一键
-        key = (url or "local", collection_name)
-        
+        """获取或创建Qdrant实例（单例模式）
+
+        缓存 key 包含 vector_size / distance，避免不同维度复用同一个错误实例。
+        """
+        key = (url or "local", collection_name, int(vector_size), distance.lower())
+
         if key not in cls._instances:
             with cls._lock:
-                # 双重检查锁定
                 if key not in cls._instances:
-                    logger.debug(f"🔄 创建新的Qdrant连接: {collection_name}")
+                    logger.debug(f"🔄 创建新的Qdrant连接: {collection_name} dim={vector_size}")
                     cls._instances[key] = QdrantVectorStore(
                         url=url,
                         api_key=api_key,
@@ -98,8 +120,19 @@ class QdrantConnectionManager:
                     logger.debug(f"♻️ 复用现有Qdrant连接: {collection_name}")
         else:
             logger.debug(f"♻️ 复用现有Qdrant连接: {collection_name}")
-            
+
         return cls._instances[key]
+
+    @classmethod
+    def close_all(cls):
+        """显式关闭所有缓存的连接（应用退出时调用）"""
+        with cls._lock:
+            for inst in list(cls._instances.values()):
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+            cls._instances.clear()
 
 class QdrantVectorStore:
     """Qdrant向量数据库存储实现"""
@@ -108,7 +141,7 @@ class QdrantVectorStore:
         self, 
         url: Optional[str] = None,
         api_key: Optional[str] = None,
-        collection_name: str = "hello_agents_vectors",
+        collection_name: str = "lingye_agents_vectors",
         vector_size: int = 384,
         distance: str = "cosine",
         timeout: int = 30,
@@ -311,40 +344,37 @@ class QdrantVectorStore:
                 ids = [f"vec_{i}_{int(datetime.now().timestamp() * 1000000)}" 
                        for i in range(len(vectors))]
             
-            # 构建点数据
-            logger.info(f"[Qdrant] add_vectors start: n_vectors={len(vectors)} n_meta={len(metadata)} collection={self.collection_name}")
-            points = []
-            for i, (vector, meta, point_id) in enumerate(zip(vectors, metadata, ids)):
-                # 确保向量是正确的维度
+            # 提前做一次"全量校验"：发现任意一个坏向量就整批失败，
+            # 避免 vectors/metadata/ids 的下标错位导致"看似成功，实则部分缺失"。
+            if len(vectors) != len(metadata) or len(vectors) != len(ids):
+                raise ValueError(
+                    f"[Qdrant] 输入长度不一致: vectors={len(vectors)} metadata={len(metadata)} ids={len(ids)}"
+                )
+            for i, vector in enumerate(vectors):
                 try:
                     vlen = len(vector)
                 except Exception:
-                    logger.error(f"[Qdrant] 非法向量类型: index={i} type={type(vector)} value={vector}")
-                    continue
+                    raise ValueError(f"[Qdrant] 非法向量类型 index={i}: type={type(vector).__name__}")
                 if vlen != self.vector_size:
-                    logger.warning(f"⚠️ 向量维度不匹配: 期望{self.vector_size}, 实际{len(vector)}")
-                    continue
-                    
+                    raise ValueError(
+                        f"[Qdrant] 向量维度不匹配 index={i}: 期望 {self.vector_size}, 实际 {vlen}"
+                    )
+
+            # 构建点数据
+            logger.info(f"[Qdrant] add_vectors start: n_vectors={len(vectors)} n_meta={len(metadata)} collection={self.collection_name}")
+            now_ts = int(datetime.now().timestamp())
+            points = []
+            for vector, meta, point_id in zip(vectors, metadata, ids):
                 # 添加时间戳到元数据
                 meta_with_timestamp = meta.copy()
-                meta_with_timestamp["timestamp"] = int(datetime.now().timestamp())
-                meta_with_timestamp["added_at"] = int(datetime.now().timestamp())
+                meta_with_timestamp["timestamp"] = now_ts
+                meta_with_timestamp["added_at"] = now_ts
                 if "external" in meta_with_timestamp and not isinstance(meta_with_timestamp.get("external"), bool):
-                    # normalize to bool
                     val = meta_with_timestamp.get("external")
-                    meta_with_timestamp["external"] = True if str(val).lower() in ("1", "true", "yes") else False
-                # 确保点ID是Qdrant接受的类型（无符号整数或UUID字符串）
-                safe_id: Any
-                if isinstance(point_id, int):
-                    safe_id = point_id
-                elif isinstance(point_id, str):
-                    try:
-                        uuid.UUID(point_id)
-                        safe_id = point_id
-                    except Exception:
-                        safe_id = str(uuid.uuid4())
-                else:
-                    safe_id = str(uuid.uuid4())
+                    meta_with_timestamp["external"] = str(val).lower() in ("1", "true", "yes")
+                # 稳定映射点ID（同一业务 memory_id 始终对应同一 point_id），
+                # 否则后续 upsert/删除会找不到旧点，造成重复。
+                safe_id = _to_qdrant_point_id(point_id)
 
                 point = PointStruct(
                     id=safe_id,
@@ -352,7 +382,7 @@ class QdrantVectorStore:
                     payload=meta_with_timestamp
                 )
                 points.append(point)
-            
+
             if not points:
                 logger.warning("⚠️ 没有有效的向量点")
                 return False
@@ -629,10 +659,26 @@ class QdrantVectorStore:
             logger.error(f"❌ Qdrant健康检查失败: {e}")
             return False
     
-    def __del__(self):
-        """析构函数，清理资源"""
-        if hasattr(self, 'client') and self.client:
+    def close(self):
+        """显式关闭客户端连接（推荐显式调用，不依赖 __del__）"""
+        if getattr(self, "client", None) is not None:
             try:
                 self.client.close()
-            except:
+            except Exception:
                 pass
+            finally:
+                self.client = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def __del__(self):
+        """析构函数兜底，清理资源（推荐显式 close）"""
+        try:
+            self.close()
+        except Exception:
+            pass

@@ -8,7 +8,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 class MemoryItem(BaseModel):
     """记忆项数据结构"""
@@ -17,11 +17,21 @@ class MemoryItem(BaseModel):
     memory_type: str
     user_id: str
     timestamp: datetime
-    importance: float = 0.5
-    metadata: Dict[str, Any] = {}
+    # 重要性必须在 [0, 1] 区间
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
+
+    @field_validator("importance", mode="before")
+    @classmethod
+    def _clamp_importance(cls, v):
+        # 容错：非数字输入按 0.5 处理；超界值夹到 [0,1] 而不是直接报错
+        try:
+            f = float(v)
+        except Exception:
+            return 0.5
+        return max(0.0, min(1.0, f))
 
 class MemoryConfig(BaseModel):
     """记忆系统配置"""

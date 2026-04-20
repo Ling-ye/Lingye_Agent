@@ -2,13 +2,15 @@ from typing import List, Dict, Optional, Any
 import logging
 import os
 import hashlib
-import sqlite3
 import time
-import json
 
 logger = logging.getLogger(__name__)
 from ..embedding import get_text_embedder, get_dimension
-from ..storage.qdrant_store import QdrantVectorStore
+from ..storage.qdrant_store import QdrantVectorStore, QdrantConnectionManager
+
+
+# 全 pipeline 统一使用的默认 RAG 集合名（可被 RAG_COLLECTION 环境变量覆盖）
+_DEFAULT_RAG_COLLECTION = os.getenv("RAG_COLLECTION", "lingye_agents_rag_vectors")
 
 
 def _get_markitdown_instance():
@@ -19,7 +21,7 @@ def _get_markitdown_instance():
         from markitdown import MarkItDown
         return MarkItDown()
     except ImportError:
-        print("[WARNING] MarkItDown not available. Install with: pip install markitdown")
+        logger.warning("MarkItDown not available. Install with: pip install markitdown")
         return None
 
 
@@ -81,33 +83,33 @@ def _convert_to_markdown(path: str) -> str:
             return text
         return ""
     except Exception as e:
-        print(f"[WARNING] MarkItDown failed for {path}: {e}")
+        logger.warning(f"MarkItDown failed for {path}: {e}")
         return _fallback_text_reader(path)
 
 def _enhanced_pdf_processing(path: str) -> str:
     """
     Enhanced PDF processing with post-processing cleanup.
     """
-    print(f"[RAG] Using enhanced PDF processing for: {path}")
-    
+    logger.info(f"[RAG] Using enhanced PDF processing for: {path}")
+
     # 使用原有MarkItDown提取
     md_instance = _get_markitdown_instance()
     if md_instance is None:
         return _fallback_text_reader(path)
-    
+
     try:
         result = md_instance.convert(path)
         raw_text = getattr(result, "text_content", None)
         if not raw_text or not raw_text.strip():
             return ""
-        
+
         # 后处理：清理和重组文本
         cleaned_text = _post_process_pdf_text(raw_text)
-        print(f"[RAG] PDF post-processing completed: {len(raw_text)} -> {len(cleaned_text)} chars")
+        logger.info(f"[RAG] PDF post-processing completed: {len(raw_text)} -> {len(cleaned_text)} chars")
         return cleaned_text
-        
+
     except Exception as e:
-        print(f"[WARNING] Enhanced PDF processing failed for {path}: {e}")
+        logger.warning(f"Enhanced PDF processing failed for {path}: {e}")
         return _fallback_text_reader(path)
 
 def _post_process_pdf_text(text: str) -> str:
@@ -279,7 +281,46 @@ def _split_paragraphs_with_headings(text: str) -> List[Dict]:
     return paragraphs
 
 
+def _split_oversized_paragraph(p: Dict, chunk_tokens: int) -> List[Dict]:
+    """把单个超长段落（>chunk_tokens）按字符近似切分成多个小段。
+
+    简单实现：按"目标 token 数 / 字符密度"估算每段字符数上限，沿原始内容滑动切分。
+    Token 近似算法见 `_approx_token_len`。
+    """
+    content = p.get("content", "") or ""
+    if not content:
+        return [p]
+    total_tokens = _approx_token_len(content) or 1
+    if total_tokens <= chunk_tokens:
+        return [p]
+    # 字符 ≈ token 时按比例换算每片字符数；保留最少 50 字符避免无限循环
+    chars_per_token = max(1.0, len(content) / float(total_tokens))
+    max_chars = max(50, int(chunk_tokens * chars_per_token))
+
+    pieces: List[Dict] = []
+    base_start = p.get("start", 0) or 0
+    pos = 0
+    while pos < len(content):
+        sub = content[pos: pos + max_chars]
+        if not sub:
+            break
+        pieces.append({
+            "content": sub,
+            "heading_path": p.get("heading_path"),
+            "start": base_start + pos,
+            "end": base_start + pos + len(sub),
+        })
+        pos += max_chars
+    return pieces or [p]
+
+
 def _chunk_paragraphs(paragraphs: List[Dict], chunk_tokens: int, overlap_tokens: int) -> List[Dict]:
+    # 先把任何超长段落预切分，确保单段不会超过 chunk_tokens（防止 embedding 超长 / OOM）
+    expanded: List[Dict] = []
+    for p in paragraphs:
+        expanded.extend(_split_oversized_paragraph(p, chunk_tokens))
+    paragraphs = expanded
+
     chunks: List[Dict] = []
     cur: List[Dict] = []
     cur_tokens = 0
@@ -337,22 +378,22 @@ def load_and_chunk_texts(paths: List[str], chunk_size: int = 800, chunk_overlap:
     Universal document loader and chunker using MarkItDown.
     Converts all supported formats to markdown, then chunks intelligently.
     """
-    print(f"[RAG] Universal loader start: files={len(paths)} chunk_size={chunk_size} overlap={chunk_overlap} ns={namespace or 'default'}")
+    logger.info(f"[RAG] Universal loader start: files={len(paths)} chunk_size={chunk_size} overlap={chunk_overlap} ns={namespace or 'default'}")
     chunks: List[Dict] = []
     seen_hashes = set()
-    
+
     for path in paths:
         if not os.path.exists(path):
-            print(f"[WARNING] File not found: {path}")
+            logger.warning(f"File not found: {path}")
             continue
-            
-        print(f"[RAG] Processing: {path}")
+
+        logger.info(f"[RAG] Processing: {path}")
         ext = (os.path.splitext(path)[1] or '').lower()
-        
+
         # Convert to markdown using MarkItDown
         markdown_text = _convert_to_markdown(path)
         if not markdown_text.strip():
-            print(f"[WARNING] No content extracted from: {path}")
+            logger.warning(f"No content extracted from: {path}")
             continue
         
         lang = _detect_lang(markdown_text)
@@ -395,11 +436,15 @@ def load_and_chunk_texts(paths: List[str], chunk_size: int = 800, chunk_overlap:
                 },
             })
             
-    print(f"[RAG] Universal loader done: total_chunks={len(chunks)}")
+    logger.info(f"[RAG] Universal loader done: total_chunks={len(chunks)}")
     return chunks
 
 
 def build_graph_from_chunks(neo4j, chunks: List[Dict]) -> None:
+    """把 chunks 灌进 Neo4j：Document / Memory 节点 + HAS_CHUNK 关系。
+
+    任意一步失败都打 warning（之前是静默 pass），方便排查图谱缺失问题。
+    """
     created_docs = set()
     for ch in chunks:
         mem_id = ch["id"]
@@ -415,8 +460,8 @@ def build_graph_from_chunks(neo4j, chunks: List[Dict]) -> None:
                     entity_type="Document",
                     properties={"source_path": source_path, "lang": meta.get("lang")}
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[RAG][graph] add Document entity 失败 doc_id={doc_id}: {e}")
         try:
             neo4j.add_entity(entity_id=mem_id, name=mem_id, entity_type="Memory", properties={
                 "source_path": source_path,
@@ -424,13 +469,18 @@ def build_graph_from_chunks(neo4j, chunks: List[Dict]) -> None:
                 "start": meta.get("start"),
                 "end": meta.get("end"),
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[RAG][graph] add Memory entity 失败 mem_id={mem_id}: {e}")
         if doc_id:
             try:
-                neo4j.add_relationship(from_id=doc_id, to_id=mem_id, rel_type="HAS_CHUNK", properties={})
-            except Exception:
-                pass
+                neo4j.add_relationship(
+                    from_entity_id=doc_id,
+                    to_entity_id=mem_id,
+                    relationship_type="HAS_CHUNK",
+                    properties={},
+                )
+            except Exception as e:
+                logger.warning(f"[RAG][graph] add HAS_CHUNK 失败 {doc_id}->{mem_id}: {e}")
 
 
 def _preprocess_markdown_for_embedding(text: str) -> str:
@@ -461,30 +511,23 @@ def _preprocess_markdown_for_embedding(text: str) -> str:
     return text.strip()
 
 
-def _create_default_vector_store(dimension: int = None) -> QdrantVectorStore:
-    """
-    Create default Qdrant vector store with RAG-optimized settings.
-    使用连接管理器避免重复连接。
-    """
+def _create_default_vector_store(
+    dimension: Optional[int] = None,
+    qdrant_url: Optional[str] = None,
+    qdrant_api_key: Optional[str] = None,
+    collection_name: Optional[str] = None,
+) -> QdrantVectorStore:
+    """统一创建 RAG 默认 Qdrant 向量库（走 ConnectionManager 避免重复连接）。"""
     if dimension is None:
         dimension = get_dimension(384)
-    
-    # Check for Qdrant configuration
-    qdrant_url = os.getenv("QDRANT_URL")
-    qdrant_api_key = os.getenv("QDRANT_API_KEY")
-    
-    # 使用连接管理器
-    from ..storage.qdrant_store import QdrantConnectionManager
+
     return QdrantConnectionManager.get_instance(
-        url=qdrant_url,
-        api_key=qdrant_api_key,
-        collection_name="Lingye_agents_rag_vectors",
+        url=qdrant_url if qdrant_url is not None else os.getenv("QDRANT_URL"),
+        api_key=qdrant_api_key if qdrant_api_key is not None else os.getenv("QDRANT_API_KEY"),
+        collection_name=collection_name or _DEFAULT_RAG_COLLECTION,
         vector_size=dimension,
-        distance="cosine"
+        distance="cosine",
     )
-
-
-# Cache functions removed - using unified embedder with internal caching
 
 
 def _normalize_embedder_batch_output(part_vecs) -> List:
@@ -511,165 +554,144 @@ def _normalize_embedder_batch_output(part_vecs) -> List:
     return part_vecs
 
 
+def _encode_one_vector(embedder, text: str, dimension: int) -> List[float]:
+    """编码单条文本并严格校验维度，不匹配直接抛错（不再静默截断/零填充）。"""
+    raw = embedder.encode(text)
+    # encode 单条返回可能是 ndarray 或 list；批量返回是 list
+    if hasattr(raw, "tolist"):
+        raw = raw.tolist()
+    if isinstance(raw, list) and raw and isinstance(raw[0], (list, tuple)):
+        raw = raw[0]  # 单条但被包成 [vec] 的情况
+    vec = [float(x) for x in raw]
+    if len(vec) != dimension:
+        raise ValueError(f"嵌入维度不匹配: 期望 {dimension}, 实际 {len(vec)}")
+    return vec
+
+
 def index_chunks(
-    store = None, 
-    chunks: List[Dict] = None, 
-    cache_db: Optional[str] = None, 
+    store=None,
+    chunks: List[Dict] = None,
     batch_size: int = 64,
-    rag_namespace: str = "default"
+    rag_namespace: str = "default",
 ) -> None:
-    """
-    Index markdown chunks with unified embedding and Qdrant storage.
-    Uses百炼 API with fallback to sentence-transformers.
+    """对 chunks 做嵌入并写入 Qdrant。
+
+    设计要点：
+    - 维度不匹配 → 抛错，不再静默截断或零填充（破坏检索语义）；
+    - 单批 encoding 失败 → 自动按 8 条小批次重试一次；仍失败则**整批跳过这部分 chunks 并告警**，
+      不再写入零向量假装成功。
     """
     if not chunks:
-        print("[RAG] No chunks to index")
+        logger.info("[RAG] No chunks to index")
         return
-    
-    # Use unified embedding from embedding module
+
     embedder = get_text_embedder()
-    dimension = get_dimension(384)
-    
-    # Create default Qdrant store if not provided
+    # 优先使用 embedder 真实维度，避免与 fallback(384) 不一致
+    dimension = int(getattr(embedder, "dimension", None) or get_dimension(384))
+
     if store is None:
         store = _create_default_vector_store(dimension)
-        print(f"[RAG] Created default Qdrant store with dimension {dimension}")
-    
-    # Preprocess markdown texts for better embeddings
-    processed_texts = []
-    for c in chunks:
-        raw_content = c["content"]
-        processed_content = _preprocess_markdown_for_embedding(raw_content)
-        processed_texts.append(processed_content)
-    
-    print(f"[RAG] Embedding start: total_texts={len(processed_texts)} batch_size={batch_size}")
-    
-    # Batch encoding with unified embedder
-    vecs: List[List[float]] = []
-    for i in range(0, len(processed_texts), batch_size):
-        part = processed_texts[i:i+batch_size]
+        logger.info(f"[RAG] Created default Qdrant store with dimension {dimension}")
+
+    processed_texts: List[str] = [
+        _preprocess_markdown_for_embedding(c["content"]) for c in chunks
+    ]
+    logger.info(f"[RAG] Embedding start: total_texts={len(processed_texts)} batch_size={batch_size}")
+
+    # vecs[i] = chunks[i] 对应的向量；失败位置标 None，最后过滤
+    vecs: List[Optional[List[float]]] = [None] * len(processed_texts)
+
+    def _encode_batch(texts: List[str]) -> Optional[List[List[float]]]:
         try:
-            # Use unified embedder directly (handles caching internally)
-            part_vecs = _normalize_embedder_batch_output(embedder.encode(part))
-            
-            for v in part_vecs:
-                try:
-                    # 确保向量是float列表
-                    if hasattr(v, "tolist"):
-                        v = v.tolist()
-                    v_norm = [float(x) for x in v]
-                    if len(v_norm) != dimension:
-                        print(f"[WARNING] 向量维度异常: 期望{dimension}, 实际{len(v_norm)}")
-                        # 用零向量填充或截断
-                        if len(v_norm) < dimension:
-                            v_norm.extend([0.0] * (dimension - len(v_norm)))
-                        else:
-                            v_norm = v_norm[:dimension]
-                    vecs.append(v_norm)
-                except Exception as e:
-                    print(f"[WARNING] 向量转换失败: {e}, 使用零向量")
-                    vecs.append([0.0] * dimension)
-                
+            raw = _normalize_embedder_batch_output(embedder.encode(texts))
         except Exception as e:
-            print(f"[WARNING] Batch {i} encoding failed: {e}")
-            print(f"[RAG] Retrying batch {i} with smaller chunks...")
-            
-            # 尝试重试：将批次分解为更小的块
-            success = False
-            for j in range(0, len(part), 8):  # 更小的批次（DashScope 单请求上限 10，8 为安全值）
-                small_part = part[j:j+8]
-                try:
-                    import time
-                    time.sleep(2)  # 等待2秒避免频率限制
-                    
-                    small_vecs = _normalize_embedder_batch_output(embedder.encode(small_part))
-                    
-                    for v in small_vecs:
-                        try:
-                            v_norm = [float(x) for x in v]
-                            if len(v_norm) != dimension:
-                                print(f"[WARNING] 向量维度异常: 期望{dimension}, 实际{len(v_norm)}")
-                                if len(v_norm) < dimension:
-                                    v_norm.extend([0.0] * (dimension - len(v_norm)))
-                                else:
-                                    v_norm = v_norm[:dimension]
-                            vecs.append(v_norm)
-                            success = True
-                        except Exception as e2:
-                            print(f"[WARNING] 小批次向量转换失败: {e2}")
-                            vecs.append([0.0] * dimension)
-                except Exception as e2:
-                    print(f"[WARNING] 小批次 {j//8} 仍然失败: {e2}")
-                    # 为这个小批次创建零向量
-                    for _ in range(len(small_part)):
-                        vecs.append([0.0] * dimension)
-            
-            if not success:
-                print(f"[ERROR] 批次 {i} 完全失败，使用零向量")
-        
-        print(f"[RAG] Embedding progress: {min(i+batch_size, len(processed_texts))}/{len(processed_texts)}")
-    
-    # Prepare metadata with RAG tags
-    metas: List[Dict] = []
-    ids: List[str] = []
-    for ch in chunks:
+            logger.warning(f"[RAG] batch encode failed n={len(texts)}: {e}")
+            return None
+        if len(raw) != len(texts):
+            logger.warning(
+                f"[RAG] embedder 返回条数与请求不一致: {len(raw)} vs {len(texts)}, 整批丢弃"
+            )
+            return None
+        out: List[List[float]] = []
+        for v in raw:
+            if hasattr(v, "tolist"):
+                v = v.tolist()
+            vec = [float(x) for x in v]
+            if len(vec) != dimension:
+                logger.warning(
+                    f"[RAG] 向量维度不匹配: 期望 {dimension}, 实际 {len(vec)}, 整批丢弃"
+                )
+                return None
+            out.append(vec)
+        return out
+
+    for i in range(0, len(processed_texts), batch_size):
+        part = processed_texts[i:i + batch_size]
+        result = _encode_batch(part)
+        if result is not None:
+            for k, v in enumerate(result):
+                vecs[i + k] = v
+        else:
+            # 自动小批量重试一次，避免上游一次性请求超长/限流
+            logger.info(f"[RAG] retry batch {i} with smaller sub-batches")
+            time.sleep(1)
+            sub_size = 8
+            for j in range(0, len(part), sub_size):
+                small_part = part[j:j + sub_size]
+                small_result = _encode_batch(small_part)
+                if small_result is not None:
+                    for k, v in enumerate(small_result):
+                        vecs[i + j + k] = v
+                else:
+                    logger.warning(
+                        f"[RAG] 小批次 {j // sub_size} 仍然失败，跳过 {len(small_part)} 个 chunk"
+                    )
+        logger.info(f"[RAG] Embedding progress: {min(i + batch_size, len(processed_texts))}/{len(processed_texts)}")
+
+    # 过滤掉失败位置：宁可少索引也不写脏数据
+    final_vecs: List[List[float]] = []
+    final_metas: List[Dict] = []
+    final_ids: List[str] = []
+    skipped = 0
+    for ch, v in zip(chunks, vecs):
+        if v is None:
+            skipped += 1
+            continue
         meta = {
             "memory_id": ch["id"],
             "user_id": "rag_user",
             "memory_type": "rag_chunk",
-            "content": ch["content"],  # Keep original markdown content
-            "data_source": "rag_pipeline",  # RAG identification tag
+            "content": ch["content"],
+            "data_source": "rag_pipeline",
             "rag_namespace": rag_namespace,
-            "is_rag_data": True,  # Clear RAG data marker
+            "is_rag_data": True,
         }
-        # Merge chunk metadata
         meta.update(ch.get("metadata", {}))
-        metas.append(meta)
-        ids.append(ch["id"])
-    
-    print(f"[RAG] Qdrant upsert start: n={len(vecs)}")
-    success = store.add_vectors(vectors=vecs, metadata=metas, ids=ids)
+        final_vecs.append(v)
+        final_metas.append(meta)
+        final_ids.append(ch["id"])
+
+    if skipped:
+        logger.warning(f"[RAG] {skipped}/{len(chunks)} chunks 因嵌入失败被跳过")
+
+    if not final_vecs:
+        logger.error("[RAG] 所有 chunks 嵌入失败，未写入任何向量")
+        raise RuntimeError("Failed to embed any chunks")
+
+    logger.info(f"[RAG] Qdrant upsert start: n={len(final_vecs)}")
+    success = store.add_vectors(vectors=final_vecs, metadata=final_metas, ids=final_ids)
     if success:
-        print(f"[RAG] Qdrant upsert done: {len(vecs)} vectors indexed")
+        logger.info(f"[RAG] Qdrant upsert done: {len(final_vecs)} vectors indexed")
     else:
-        print(f"[RAG] Qdrant upsert failed")
+        logger.error("[RAG] Qdrant upsert failed")
         raise RuntimeError("Failed to index vectors to Qdrant")
 
 
 def embed_query(query: str) -> List[float]:
-    """
-    Embed query using unified embedding (百炼 with fallback).
-    """
+    """对查询做嵌入；维度不匹配直接抛错，避免用零向量"假成功"污染检索。"""
     embedder = get_text_embedder()
-    dimension = get_dimension(384)
-    try:
-        vec = embedder.encode(query)
-        
-        # Normalize to List[float]
-        if hasattr(vec, "tolist"):
-            vec = vec.tolist()
-        
-        # 处理嵌套列表情况
-        if isinstance(vec, list) and vec and isinstance(vec[0], (list, tuple)):
-            vec = vec[0]  # Extract first vector if nested
-        
-        # 转换为float列表
-        result = [float(x) for x in vec]
-        
-        # 检查维度
-        if len(result) != dimension:
-            print(f"[WARNING] Query向量维度异常: 期望{dimension}, 实际{len(result)}")
-            # 用零向量填充或截断
-            if len(result) < dimension:
-                result.extend([0.0] * (dimension - len(result)))
-            else:
-                result = result[:dimension]
-        
-        return result
-    except Exception as e:
-        print(f"[WARNING] Query embedding failed: {e}")
-        # Return zero vector as fallback
-        return [0.0] * dimension
+    dimension = int(getattr(embedder, "dimension", None) or get_dimension(384))
+    return _encode_one_vector(embedder, query, dimension)
 
 
 def search_vectors(
@@ -703,19 +725,19 @@ def search_vectors(
     
     try:
         return store.search_similar(
-            query_vector=qv, 
-            limit=top_k, 
-            score_threshold=score_threshold, 
-            where=where
+            query_vector=qv,
+            limit=top_k,
+            score_threshold=score_threshold,
+            where=where,
         )
     except Exception as e:
-        print(f"[WARNING] RAG search failed: {e}")
+        logger.warning(f"[RAG] search failed: {e}")
         return []
 
 
 def _prompt_mqe(query: str, n: int) -> List[str]:
     try:
-        from core import LingyeLLM
+        from ...core import LingyeLLM
         llm = LingyeLLM()
         prompt = [
             {"role": "system", "content": "你是检索查询扩展助手。生成语义等价或互补的多样化查询。使用中文，简短，避免标点。"},
@@ -731,7 +753,7 @@ def _prompt_mqe(query: str, n: int) -> List[str]:
 
 def _prompt_hyde(query: str) -> Optional[str]:
     try:
-        from core import LingyeLLM
+        from ...core import LingyeLLM
         llm = LingyeLLM()
         prompt = [
             {"role": "system", "content": "根据用户问题，先写一段可能的答案性段落，用于向量检索的查询文档（不要分析过程）。"},
@@ -862,18 +884,34 @@ def _try_load_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6
         return None
 
 
+def _item_content(it: Dict) -> str:
+    """统一从 hit 取出文本内容：优先 metadata.content，再回退 it.content。
+
+    `search_similar` / `search_vectors` 返回的结果文本一般在 metadata.content 中，
+    而 `rank()` 输出会把它平铺到 it.content；这里两种都兼容。
+    """
+    return (it.get("metadata", {}) or {}).get("content") or it.get("content", "") or ""
+
+
+def _item_memory_id(it: Dict) -> Optional[str]:
+    """统一从 hit 取出 memory_id：优先 metadata.memory_id，再回退 it.memory_id / it.id。"""
+    meta = it.get("metadata", {}) or {}
+    return meta.get("memory_id") or it.get("memory_id") or it.get("id")
+
+
 def rerank_with_cross_encoder(query: str, items: List[Dict], model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2", top_k: int = 10) -> List[Dict]:
     ce = _try_load_cross_encoder(model_name)
     if ce is None or not items:
         return items[:top_k]
-    pairs = [[query, it.get("content", "")] for it in items]
+    pairs = [[query, _item_content(it)] for it in items]
     try:
         scores = ce.predict(pairs)
         for it, s in zip(items, scores):
             it["rerank_score"] = float(s)
         items.sort(key=lambda x: x.get("rerank_score", x.get("score", 0.0)), reverse=True)
         return items[:top_k]
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[RAG] cross-encoder rerank 失败: {e}")
         return items[:top_k]
 
 
@@ -983,37 +1021,41 @@ def merge_snippets(ranked_items: List[Dict], max_chars: int = 1200) -> str:
 
 
 def expand_neighbors_from_pool(selected: List[Dict], pool: List[Dict], neighbors: int = 1, max_additions: int = 5) -> List[Dict]:
+    """根据已选 hit 在同 doc 内向左右各扩 neighbors 个 chunk，丰富上下文。
+
+    注意：hit 的 memory_id 可能在 metadata.memory_id 也可能直接在顶层 id，
+    统一通过 _item_memory_id 读取，避免之前"取不到 id 永远扩不出来"的 bug。
+    """
     if not selected or not pool or neighbors <= 0:
         return selected
-    # index pool by doc_id and sort by start
+    # 按 doc_id 分组并按 start 排序
     by_doc: Dict[str, List[Dict]] = {}
     for it in pool:
-        meta = it.get("metadata", {})
-        did = meta.get("doc_id")
+        did = (it.get("metadata", {}) or {}).get("doc_id")
         if not did:
             continue
         by_doc.setdefault(did, []).append(it)
     for did, arr in by_doc.items():
         arr.sort(key=lambda x: (x.get("metadata", {}).get("start", 0)))
-    selected_ids = set(it.get("memory_id") for it in selected)
+
+    selected_ids = {mid for mid in (_item_memory_id(it) for it in selected) if mid}
     additions: List[Dict] = []
     for it in selected:
-        meta = it.get("metadata", {})
-        did = meta.get("doc_id")
-        if not did or did not in by_doc:
+        did = (it.get("metadata", {}) or {}).get("doc_id")
+        cur_mid = _item_memory_id(it)
+        if not did or did not in by_doc or not cur_mid:
             continue
         arr = by_doc[did]
-        # find index
         try:
-            idx = next(i for i, x in enumerate(arr) if x.get("memory_id") == it.get("memory_id"))
+            idx = next(i for i, x in enumerate(arr) if _item_memory_id(x) == cur_mid)
         except StopIteration:
             continue
         for offset in range(1, neighbors + 1):
             for j in (idx - offset, idx + offset):
                 if 0 <= j < len(arr):
                     cand = arr[j]
-                    mid = cand.get("memory_id")
-                    if mid not in selected_ids:
+                    mid = _item_memory_id(cand)
+                    if mid and mid not in selected_ids:
                         additions.append(cand)
                         selected_ids.add(mid)
                         if len(additions) >= max_additions:
@@ -1022,7 +1064,6 @@ def expand_neighbors_from_pool(selected: List[Dict], pool: List[Dict], neighbors
                 break
         if len(additions) >= max_additions:
             break
-    # keep relative order by score
     extended = list(selected) + additions
     extended.sort(key=lambda x: (x.get("rerank_score", x.get("score", 0.0))), reverse=True)
     return extended
@@ -1160,7 +1201,7 @@ def tldr_summarize(text: str, bullets: int = 3) -> Optional[str]:
     try:
         if not text or len(text.strip()) == 0:
             return None
-        from core import LingyeLLM
+        from ...core import LingyeLLM
         llm = LingyeLLM()
         prompt = [
             {"role": "system", "content": "请将以下内容概括为简洁的要点列表（最多3-5条），用中文，避免重复，突出关键信息。"},
@@ -1179,38 +1220,50 @@ def tldr_summarize(text: str, bullets: int = 3) -> Optional[str]:
 def create_rag_pipeline(
     qdrant_url: Optional[str] = None,
     qdrant_api_key: Optional[str] = None,
-    collection_name: str = "Lingye_agents_rag_vectors",
-    rag_namespace: str = "default"
+    collection_name: Optional[str] = None,
+    rag_namespace: str = "default",
 ) -> Dict[str, Any]:
     """
     Create a complete RAG pipeline with Qdrant and unified embedding.
-    
-    Returns:
-        Dict containing store, namespace, and helper functions
+
+    默认走 ConnectionManager + 统一默认 collection，避免与 _create_default_vector_store 分叉
+    导致同一项目同时存在多个 RAG 集合。
     """
-    dimension = get_dimension(384)
-    
-    store = QdrantVectorStore(
-        url=qdrant_url,
-        api_key=qdrant_api_key,
+    embedder = get_text_embedder()
+    dimension = int(getattr(embedder, "dimension", None) or get_dimension(384))
+
+    store = _create_default_vector_store(
+        dimension=dimension,
+        qdrant_url=qdrant_url,
+        qdrant_api_key=qdrant_api_key,
         collection_name=collection_name,
-        vector_size=dimension,
-        distance="cosine"
     )
     
-    def add_documents(file_paths: List[str], chunk_size: int = 800, chunk_overlap: int = 100):
-        """Add documents to RAG pipeline"""
+    def add_documents(
+        file_paths: List[str],
+        chunk_size: int = 800,
+        chunk_overlap: int = 100,
+        document_id: Optional[str] = None,
+    ):
+        """Add documents to RAG pipeline.
+
+        如果传入 document_id，会把生成的所有 chunk 的 metadata.doc_id 强制覆盖为该值，
+        方便上层（rag_tool）按 doc_id 做后续查询/删除。
+        """
         chunks = load_and_chunk_texts(
             paths=file_paths,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             namespace=rag_namespace,
-            source_label="rag"
+            source_label="rag",
         )
+        if document_id:
+            for ch in chunks:
+                ch.setdefault("metadata", {})["doc_id"] = document_id
         index_chunks(
             store=store,
             chunks=chunks,
-            rag_namespace=rag_namespace
+            rag_namespace=rag_namespace,
         )
         return len(chunks)
     

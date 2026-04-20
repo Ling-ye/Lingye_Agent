@@ -52,9 +52,17 @@ class MemoryManager:
                 logger.info("💡 其他记忆类型（工作记忆、情景记忆、感知记忆）仍然可用")
             
         if enable_perceptual:
-            self.memory_types['perceptual'] = PerceptualMemory(self.config)
-        
+            try:
+                self.memory_types['perceptual'] = PerceptualMemory(self.config)
+            except Exception as e:
+                logger.warning(f"⚠️ 感知记忆初始化失败，将跳过感知记忆功能: {e}")
+
         logger.info(f"MemoryManager初始化完成，启用记忆类型: {list(self.memory_types.keys())}")
+
+    @property
+    def available_memory_types(self) -> List[str]:
+        """实际可用的记忆类型（已初始化成功的）"""
+        return list(self.memory_types.keys())
     
     def add_memory(
         self,
@@ -134,20 +142,27 @@ class MemoryManager:
             if memory_type in self.memory_types:
                 memory_instance = self.memory_types[memory_type]
                 try:
-                    # 使用各个记忆类型自己的检索方法
+                    # 各 retrieve 接受的过滤参数命名不一，这里同时传两个别名，
+                    # 让 episodic 的 importance_threshold 和其它的 min_importance 都能命中
                     type_results = memory_instance.retrieve(
                         query=query,
                         limit=per_type_limit,
                         min_importance=min_importance,
-                        user_id=self.user_id
+                        importance_threshold=min_importance,
+                        time_range=time_range,
+                        user_id=self.user_id,
                     )
                     all_results.extend(type_results)
                 except Exception as e:
                     logger.warning(f"检索 {memory_type} 记忆时出错: {e}")
                     continue
 
-        # 按重要性和相关性排序
-        all_results.sort(key=lambda x: x.importance, reverse=True)
+        # 出口再做一次重要性过滤，确保所有记忆类型最终都尊重 min_importance
+        if min_importance > 0:
+            all_results = [m for m in all_results if m.importance >= min_importance]
+
+        # 按重要性 + 时间排序（时间近的优先），更稳定
+        all_results.sort(key=lambda x: (x.importance, x.timestamp), reverse=True)
         return all_results[:limit]
     
     def update_memory(
@@ -251,12 +266,19 @@ class MemoryManager:
 
         consolidated_count = 0
         for memory in candidates:
-            # 移动到目标记忆类型
-            if source_memory.remove(memory.id):
-                memory.memory_type = to_type
-                memory.importance *= 1.1  # 提升重要性
+            # 先写目标，写成功再从源删，避免中间失败导致丢数据
+            memory.memory_type = to_type
+            memory.importance = min(1.0, memory.importance * 1.1)  # 提升重要性，限制在[0,1]
+            try:
                 target_memory.add(memory)
+            except Exception as e:
+                logger.warning(f"⚠️ 整合记忆 {memory.id} 写入 {to_type} 失败，已跳过: {e}")
+                continue
+
+            if source_memory.remove(memory.id):
                 consolidated_count += 1
+            else:
+                logger.warning(f"⚠️ 整合后从 {from_type} 删除原记忆失败: {memory.id}（数据已落到 {to_type}，可能产生重复）")
 
         logger.info(f"记忆整合完成: {consolidated_count} 条记忆从 {from_type} 转移到 {to_type}")
         return consolidated_count
@@ -296,7 +318,11 @@ class MemoryManager:
         """自动分类记忆类型"""
         if metadata and metadata.get("type"):
             return metadata["type"]
-        
+
+        # 元数据带 modality 或 raw_data，视为感知记忆（图像/音频/文件等）
+        if metadata and (metadata.get("modality") or metadata.get("raw_data")):
+            return "perceptual"
+
         # 简单的分类逻辑，可以扩展为更复杂的分类器
         if self._is_episodic_content(content):
             return "episodic"

@@ -17,9 +17,13 @@
 
 from typing import List, Union, Optional
 from urllib.parse import urlparse
+from collections import OrderedDict
 import threading
 import os
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def _env_truthy(name: str) -> bool:
@@ -220,7 +224,7 @@ class DashScopeEmbedding(EmbeddingModel):
             single = False
 
         # REST 模式（自动兼容 OpenAI / DashScope）
-        print(f"[debug] base_url:{self.base_url}")
+        logger.debug(f"DashScope embed: base_url={self.base_url}, n_inputs={len(inputs)}")
 
         if self.base_url:
             import requests
@@ -243,8 +247,7 @@ class DashScopeEmbedding(EmbeddingModel):
                         "input": inputs
                     }
 
-                    print(f"[debug][OpenAI] url:{url}")
-                    print(f"[debug][OpenAI] payload:{payload}")
+                    logger.debug(f"[OpenAI] POST {url} n_inputs={len(inputs)}")
 
                     resp = requests.post(url, headers=headers, json=payload, timeout=30)
 
@@ -255,7 +258,7 @@ class DashScopeEmbedding(EmbeddingModel):
                         vecs = [np.array(item.get("embedding")) for item in items]
 
                         if vecs:
-                            print("[Embedding] OpenAI REST 成功")
+                            logger.debug("[Embedding] OpenAI REST 成功")
                             return vecs[0] if single else vecs
 
                         raise RuntimeError("OpenAI 返回为空")
@@ -264,7 +267,7 @@ class DashScopeEmbedding(EmbeddingModel):
                         raise RuntimeError(f"{resp.status_code} {resp.text}")
 
                 except Exception as e:
-                    print(f"[Embedding] OpenAI 格式失败: {e}")
+                    logger.warning(f"[Embedding] OpenAI 格式失败: {e}")
 
             # =========================
             # DashScope 原生格式（非 OpenAI 兼容 base 时唯一路径；否则为 fallback）
@@ -285,8 +288,7 @@ class DashScopeEmbedding(EmbeddingModel):
                         }
                     }
 
-                    print(f"[debug][DashScope] url:{url}")
-                    print(f"[debug][DashScope] payload batch {start // max_batch + 1}: n={len(sub)}")
+                    logger.debug(f"[DashScope] POST {url} batch {start // max_batch + 1} n={len(sub)}")
 
                     resp = requests.post(url, headers=headers, json=payload, timeout=30)
 
@@ -306,21 +308,20 @@ class DashScopeEmbedding(EmbeddingModel):
                         raise RuntimeError(f"{resp.status_code} {resp.text}")
 
                 if all_vecs:
-                    print("[Embedding] DashScope REST 成功")
+                    logger.debug("[Embedding] DashScope REST 成功")
                     return all_vecs[0] if single else all_vecs
 
                 raise RuntimeError("DashScope 返回为空")
 
             except Exception as e:
-                print(f"[Embedding] DashScope 格式失败: {e}")
+                logger.warning(f"[Embedding] DashScope 格式失败: {e}")
 
                 raise RuntimeError("Embedding REST 两种格式全部失败")
 
         # SDK 模式
         from dashscope import TextEmbedding
-        print(f"[debug] inputs:{inputs}")
+        logger.debug(f"DashScope SDK call: n_inputs={len(inputs)}")
         rsp = TextEmbedding.call(model=self.model_name, input=inputs)
-        print(f"[debug] rsp:{rsp}")
         embeddings_obj = None
         if isinstance(rsp, dict):
             embeddings_obj = (rsp.get("output") or {}).get("embeddings")
@@ -371,7 +372,7 @@ def create_embedding_model(model_type: str = "local", **kwargs) -> EmbeddingMode
 
 def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kwargs) -> EmbeddingModel:
     """带回退的创建：默认 dashscope -> local -> tfidf；EMBED_STRICT_LOCAL 时 local 模式为 local -> tfidf"""
-    print(f"[debug] preferred_type:{preferred_type}")
+    logger.debug(f"create_embedding_model preferred_type={preferred_type}")
     if preferred_type in ("sentence_transformer", "huggingface"):
         preferred_type = "local"
     if preferred_type == "local" and _env_truthy("EMBED_STRICT_LOCAL"):
@@ -382,27 +383,94 @@ def create_embedding_model_with_fallback(preferred_type: str = "dashscope", **kw
     if preferred_type in fallback:
         fallback.remove(preferred_type)
         fallback.insert(0, preferred_type)
+    last_error: Optional[Exception] = None
     for t in fallback:
         try:
-        #     return create_embedding_model(t, **kwargs)
-        # except Exception:
-        #     continue
-            print(f"[Embedding] 尝试加载: {t}")
+            logger.info(f"[Embedding] 尝试加载: {t}")
             model = create_embedding_model(t, **kwargs)
-            print(f"[Embedding] 成功: {t}")
+            logger.info(f"[Embedding] 成功: {t}")
             return model
         except Exception as e:
-            print(f"[Embedding] 失败: {t}, error={e}")
+            logger.warning(f"[Embedding] 失败: {t}, error={e}")
             last_error = e
-    raise RuntimeError("所有嵌入模型都不可用，请安装依赖或检查配置")
+    raise RuntimeError(f"所有嵌入模型都不可用，请安装依赖或检查配置: {last_error}")
 
 
 # ==================
-# Provider（单例）
+# Provider（单例）+ 简单 LRU 缓存
 # ==================
 
 _lock = threading.RLock()
 _embedder: Optional[EmbeddingModel] = None
+
+
+class _CachingEmbedder(EmbeddingModel):
+    """对内层 embedder 加一层 LRU 缓存（按文本字符串作为 key）。
+
+    - 单条文本会直接走缓存；
+    - 批量文本时只对未命中部分实际编码，命中部分直接复用；
+    - 通过 EMBED_CACHE_SIZE 环境变量控制容量（默认 1024，0 禁用）。
+    """
+
+    def __init__(self, inner: EmbeddingModel, max_size: int = 1024):
+        self._inner = inner
+        self._max_size = max(0, int(max_size))
+        self._cache: "OrderedDict[str, Any]" = OrderedDict()
+        self._cache_lock = threading.Lock()
+
+    @property
+    def dimension(self) -> int:
+        return self._inner.dimension
+
+    def _get(self, text: str):
+        if self._max_size == 0:
+            return None
+        with self._cache_lock:
+            if text in self._cache:
+                self._cache.move_to_end(text)
+                return self._cache[text]
+        return None
+
+    def _put(self, text: str, vec):
+        if self._max_size == 0:
+            return
+        with self._cache_lock:
+            self._cache[text] = vec
+            self._cache.move_to_end(text)
+            while len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
+    def encode(self, texts: Union[str, List[str]]):
+        if isinstance(texts, str):
+            cached = self._get(texts)
+            if cached is not None:
+                return cached
+            vec = self._inner.encode(texts)
+            self._put(texts, vec)
+            return vec
+
+        # 批量：先从缓存取，剩余再调底层
+        results: List[Any] = [None] * len(texts)
+        miss_idx: List[int] = []
+        miss_texts: List[str] = []
+        for i, t in enumerate(texts):
+            cached = self._get(t)
+            if cached is not None:
+                results[i] = cached
+            else:
+                miss_idx.append(i)
+                miss_texts.append(t)
+
+        if miss_texts:
+            new_vecs = self._inner.encode(miss_texts)
+            # 单条降级保护：底层有可能在 batch=1 时返回单向量
+            if len(miss_texts) == 1 and not isinstance(new_vecs, list):
+                new_vecs = [new_vecs]
+            for idx, t, v in zip(miss_idx, miss_texts, new_vecs):
+                results[idx] = v
+                self._put(t, v)
+
+        return results
 
 
 def _build_embedder() -> EmbeddingModel:
@@ -420,7 +488,14 @@ def _build_embedder() -> EmbeddingModel:
     base_url = os.getenv("EMBED_BASE_URL")
     if base_url:
         kwargs["base_url"] = base_url
-    return create_embedding_model_with_fallback(preferred_type=preferred, **kwargs)
+    inner = create_embedding_model_with_fallback(preferred_type=preferred, **kwargs)
+
+    # 包一层 LRU 缓存（容量来自环境变量，0 表示禁用）
+    try:
+        cache_size = int(os.getenv("EMBED_CACHE_SIZE", "1024"))
+    except Exception:
+        cache_size = 1024
+    return _CachingEmbedder(inner, max_size=cache_size) if cache_size > 0 else inner
 
 
 def get_text_embedder() -> EmbeddingModel:

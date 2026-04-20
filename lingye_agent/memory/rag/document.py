@@ -14,8 +14,10 @@ class Document:
     
     def __post_init__(self):
         if self.doc_id is None:
-            # 基于内容生成ID
-            self.doc_id = hashlib.md5(self.content.encode()).hexdigest()
+            # 基于内容生成ID（显式 utf-8 避免 Windows 默认编码问题）
+            self.doc_id = hashlib.md5(
+                self.content.encode("utf-8", errors="replace")
+            ).hexdigest()
 
 @dataclass 
 class DocumentChunk:
@@ -28,9 +30,11 @@ class DocumentChunk:
     
     def __post_init__(self):
         if self.chunk_id is None:
-            # 基于文档ID和块索引生成ID
+            # 基于文档ID和块索引生成ID（显式 utf-8）
             chunk_content = f"{self.doc_id}_{self.chunk_index}_{self.content[:50]}"
-            self.chunk_id = hashlib.md5(chunk_content.encode()).hexdigest()
+            self.chunk_id = hashlib.md5(
+                chunk_content.encode("utf-8", errors="replace")
+            ).hexdigest()
 
 class DocumentProcessor:
     """文档处理器"""

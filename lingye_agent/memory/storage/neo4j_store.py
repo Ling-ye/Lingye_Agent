@@ -3,6 +3,7 @@ Neo4j图数据库存储实现
 """
 
 import logging
+import re
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
@@ -16,14 +17,25 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# 关系类型只允许字母数字下划线，避免 Cypher 注入或语法错误
+_VALID_REL_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_relationship_type(rel_type: str, fallback: str = "RELATED") -> str:
+    """对动态拼接的关系类型做白名单校验，非法时回退到 fallback。"""
+    if isinstance(rel_type, str) and _VALID_REL_TYPE.match(rel_type):
+        return rel_type
+    logger.warning(f"⚠️ 非法关系类型 {rel_type!r}，已替换为 {fallback}")
+    return fallback
+
 class Neo4jGraphStore:
     """Neo4j图数据库存储实现"""
     
     def __init__(
         self,
         uri: str = "bolt://localhost:7687",
-        username: str = "neo4j", 
-        password: str = "lingye-agents-password",
+        username: str = "neo4j",
+        password: str = "CHANGE_ME",
         database: str = "neo4j",
         max_connection_lifetime: int = 3600,
         max_connection_pool_size: int = 50,
@@ -71,8 +83,8 @@ class Neo4jGraphStore:
                 auth=(self.username, self.password),
                 **config
             )
-            
-            print(f"[debug] config:{config}")
+
+            logger.debug(f"Neo4j driver config: {config}")
             # 验证连接
             self.driver.verify_connectivity()
             
@@ -183,17 +195,19 @@ class Neo4jGraphStore:
             bool: 是否成功
         """
         try:
+            # 关系类型直接拼接到 Cypher 中，必须经过白名单校验
+            safe_rel = _safe_relationship_type(relationship_type)
             props = properties or {}
             props.update({
-                "type": relationship_type,
+                "type": safe_rel,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             })
-            
+
             query = f"""
             MATCH (from:Entity {{id: $from_id}})
             MATCH (to:Entity {{id: $to_id}})
-            MERGE (from)-[r:{relationship_type}]->(to)
+            MERGE (from)-[r:{safe_rel}]->(to)
             SET r += $properties
             RETURN r
             """
@@ -447,10 +461,26 @@ class Neo4jGraphStore:
             logger.error(f"❌ Neo4j健康检查失败: {e}")
             return False
     
-    def __del__(self):
-        """析构函数，清理资源"""
-        if hasattr(self, 'driver') and self.driver:
+    def close(self):
+        """显式关闭驱动连接（推荐显式调用，不依赖 __del__）"""
+        if getattr(self, "driver", None) is not None:
             try:
                 self.driver.close()
-            except:
+            except Exception:
                 pass
+            finally:
+                self.driver = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def __del__(self):
+        """析构函数兜底"""
+        try:
+            self.close()
+        except Exception:
+            pass
