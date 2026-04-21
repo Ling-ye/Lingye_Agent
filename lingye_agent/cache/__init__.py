@@ -15,14 +15,8 @@ response = client.chat.completions.create(model=..., messages=messages, tools=to
 
 from .optimizer import (
     DEFAULT_VOLATILE_PATTERNS,
+    __all__,
     normalize_text,
     optimize_for_cache,
     sort_tools,
 )
-
-__all__ = [
-    "DEFAULT_VOLATILE_PATTERNS",
-    "normalize_text",
-    "optimize_for_cache",
-    "sort_tools",
-]
