@@ -211,29 +211,15 @@ class TerminalTool(Tool):
     def _execute_command(self, command: str) -> str:
         """执行命令"""
         try:
-            # 根据操作系统类型调整命令执行方式
-            if self.os_type == "windows":
-                # Windows下使用cmd.exe或直接shell=True
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    cwd=str(self.current_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    env=os.environ.copy()
-                )
-            else:
-                # Unix系统（Linux/Mac）使用shell=True
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    cwd=str(self.current_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    env=os.environ.copy()
-                )
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(self.current_dir),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                env=os.environ.copy()
+            )
 
             # 合并标准输出和标准错误
             output = result.stdout

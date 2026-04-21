@@ -300,7 +300,6 @@ class SemanticMemory(BaseMemory):
             # 3.1 计算概率（对 combined_score 做 softmax 归一化）
             scores = [r.get("combined_score", r.get("vector_score", 0.0)) for r in combined_results]
             if scores:
-                import math
                 max_s = max(scores)
                 exps = [math.exp(s - max_s) for s in scores]
                 denom = sum(exps) or 1.0
@@ -585,7 +584,10 @@ class SemanticMemory(BaseMemory):
         
         if logger.level <= logging.DEBUG:
             for i, result in enumerate(sorted_results[:3]):
-                logger.debug(f"  结果{i+1}: 向量={result['vector_score']:.3f}, 图={result['graph_score']:.3f}, 精确={result.get('exact_match_bonus', 0):.3f}, 关键词={result.get('keyword_bonus', 0):.3f}, 公司={result.get('company_bonus', 0):.3f}, 实体={result.get('entity_type_bonus', 0):.3f}, 综合={result['combined_score']:.3f}")
+                logger.debug(
+                    f"  结果{i+1}: 向量={result['vector_score']:.3f}, "
+                    f"图={result['graph_score']:.3f}, 综合={result['combined_score']:.3f}"
+                )
         
         return sorted_results[:limit]
     
@@ -648,7 +650,7 @@ class SemanticMemory(BaseMemory):
                     try:
                         if hasattr(ent._, 'confidence'):
                             confidence = getattr(ent._, 'confidence', 'N/A')
-                    except:
+                    except Exception:
                         confidence = "N/A"
                     
                     logger.debug(f"🏷️ spaCy识别实体: '{ent.text}' -> {ent.label_} (置信度: {confidence})")

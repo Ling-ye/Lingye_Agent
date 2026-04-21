@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 from ..base import BaseMemory, MemoryItem, MemoryConfig
 from ..storage.document_store import SQLiteDocumentStore
-from ..storage.qdrant_store import QdrantVectorStore
 from ..embedding import get_text_embedder, get_dimension
 
 class Episode:
