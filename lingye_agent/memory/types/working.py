@@ -283,26 +283,26 @@ class WorkingMemory(BaseMemory):
         forgotten_count = 0
         current_time = datetime.now()
         
-        to_remove = []
+        to_remove = set()
         
         # 始终先执行TTL过期（分钟级）
         cutoff_ttl = current_time - timedelta(minutes=self.max_age_minutes)
         for memory in self.memories:
             if memory.timestamp < cutoff_ttl:
-                to_remove.append(memory.id)
+                to_remove.add(memory.id)
         
         if strategy == "importance_based":
             # 删除低重要性记忆
             for memory in self.memories:
                 if memory.importance < threshold:
-                    to_remove.append(memory.id)
+                    to_remove.add(memory.id)
         
         elif strategy == "time_based":
             # 删除过期记忆（工作记忆通常以小时计算）
             cutoff_time = current_time - timedelta(hours=max_age_days * 24)
             for memory in self.memories:
                 if memory.timestamp < cutoff_time:
-                    to_remove.append(memory.id)
+                    to_remove.add(memory.id)
         
         elif strategy == "capacity_based":
             # 删除超出容量的记忆
@@ -314,7 +314,7 @@ class WorkingMemory(BaseMemory):
                 )
                 excess_count = len(self.memories) - self.max_capacity
                 for memory in sorted_memories[:excess_count]:
-                    to_remove.append(memory.id)
+                    to_remove.add(memory.id)
         
         # 执行删除
         for memory_id in to_remove:
@@ -405,6 +405,9 @@ class WorkingMemory(BaseMemory):
     
     def _mark_deleted_in_heap(self, memory_id: str):
         """在堆中标记删除的记忆"""
-        # 由于heapq不支持直接删除，我们标记为已删除
-        # 在后续操作中会被清理
-        pass
+        # 直接重建堆，确保删除后堆状态一致
+        self.memory_heap = [
+            item for item in self.memory_heap
+            if item[2].id != memory_id
+        ]
+        heapq.heapify(self.memory_heap)

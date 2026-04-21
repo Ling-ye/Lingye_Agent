@@ -1,5 +1,6 @@
 """ReAct Agent实现 - 推理与行动结合的智能体"""
 
+import json
 import re
 from typing import Optional, List, Dict, Any, Tuple
 from ..cache import optimize_for_cache
@@ -147,8 +148,13 @@ class ReActAgent(Agent):
             
             print(f"🎬 行动: {tool_name}[{tool_input}]")
             
-            # 调用工具
-            observation = self.tool_registry.execute_tool(tool_name, tool_input)
+            # 调用工具（优先结构化参数，兼容纯文本）
+            tool_input_text, parameters = self._parse_tool_input(tool_input)
+            observation = self.tool_registry.execute_tool(
+                tool_name,
+                input_text=tool_input_text,
+                parameters=parameters
+            )
             print(f"👀 观察: {observation}")
             
             # 更新历史
@@ -186,3 +192,34 @@ class ReActAgent(Agent):
         """解析行动输入"""
         match = re.match(r"\w+\[(.*)\]", action_text)
         return match.group(1) if match else ""
+
+    def _parse_tool_input(self, tool_input: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """解析工具输入，返回 (文本输入, 结构化参数)"""
+        raw = tool_input.strip()
+        if not raw:
+            return "", None
+
+        # JSON 参数
+        if raw.startswith("{") and raw.endswith("}"):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return raw, parsed
+            except json.JSONDecodeError:
+                pass
+
+        # key=value,key2=value2 参数
+        if "=" in raw:
+            params: Dict[str, Any] = {}
+            for part in raw.split(","):
+                if "=" not in part:
+                    continue
+                key, value = part.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if key:
+                    params[key] = value
+            if params:
+                return raw, params
+
+        return raw, None

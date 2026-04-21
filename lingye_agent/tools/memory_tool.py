@@ -415,12 +415,11 @@ class MemoryTool(Tool):
             执行结果
         """
         try:
-            metadata = {}
             success = self.memory_manager.update_memory(
                 memory_id=memory_id,
                 content=content,
                 importance=importance,
-                metadata=metadata or None
+                metadata=None
             )
             return "✅ 记忆已更新" if success else "⚠️ 未找到要更新的记忆"
         except Exception as e:

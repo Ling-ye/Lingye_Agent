@@ -1,7 +1,6 @@
 """Reflection Agent实现 - 自我反思与迭代优化的智能体"""
 
 from typing import Optional, List, Dict, Any, TYPE_CHECKING, AsyncGenerator
-import json
 
 from ..cache import optimize_for_cache
 from ..core import Agent, LingyeLLM, Config, Message, StreamEvent, StreamEventType, LifecycleHook, Memory
@@ -177,89 +176,9 @@ class ReflectionAgent(Agent):
         Returns:
             LLM响应文本
         """
-        # 如果没有启用工具调用，直接返回
-        if not self.enable_tool_calling or not self.tool_registry:
-            cached_messages, _ = optimize_for_cache(messages)
-            llm_response = self.llm.invoke(cached_messages, **kwargs)
-            return llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
-
-        # 启用工具调用模式
-        tool_schemas = self._build_tool_schemas()
-        current_iteration = 0
-
-        while current_iteration < self.max_tool_iterations:
-            current_iteration += 1
-
-            try:
-                cached_messages, cached_tools = optimize_for_cache(messages, tool_schemas)
-                response = self.llm.invoke_with_tools(
-                    messages=cached_messages,
-                    tools=cached_tools,
-                    tool_choice="auto",
-                    **kwargs
-                )
-            except Exception as e:
-                print(f"❌ LLM 调用失败: {e}")
-                break
-
-            response_message = response.choices[0].message
-
-            # 处理工具调用
-            tool_calls = response_message.tool_calls
-            if not tool_calls:
-                # 没有工具调用，返回文本响应
-                return response_message.content or ""
-
-            # 将助手消息添加到历史
-            messages.append({
-                "role": "assistant",
-                "content": response_message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    }
-                    for tc in tool_calls
-                ]
-            })
-
-            # 执行所有工具调用
-            for tool_call in tool_calls:
-                tool_name = tool_call.function.name
-                tool_call_id = tool_call.id
-
-                try:
-                    arguments = json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError as e:
-                    print(f"❌ 工具参数解析失败: {e}")
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": f"错误：参数格式不正确 - {str(e)}"
-                    })
-                    continue
-
-                # 执行工具（复用基类方法）
-                result = self._execute_tool_call(tool_name, arguments)
-
-                # 添加工具结果到消息
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": result
-                })
-
-        # 如果超过最大迭代次数，获取最后一次回答
-        if current_iteration >= self.max_tool_iterations:
-            cached_messages, _ = optimize_for_cache(messages)
-            llm_response = self.llm.invoke(cached_messages, **kwargs)
-            return llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
-
-        return ""
+        # ReflectionAgent 当前仅走普通 LLM 调用，避免调用不存在的函数调用接口。
+        cached_messages, _ = optimize_for_cache(messages)
+        return self.llm.invoke(cached_messages, **kwargs)
 
     async def arun_stream(
         self,
@@ -295,127 +214,14 @@ class ReflectionAgent(Agent):
         )
 
         try:
-            # 阶段 1：初始执行
-            yield StreamEvent.create(
-                StreamEventType.STEP_START,
-                self.name,
-                phase="initial_execution",
-                description="生成初始回答"
-            )
-
-            messages = []
-            if self.system_prompt:
-                messages.append({"role": "system", "content": self.system_prompt})
-
-            for msg in self._history:
-                messages.append({"role": msg.role, "content": msg.content})
-
-            messages.append({"role": "user", "content": input_text})
-            messages, _ = optimize_for_cache(messages)
-
-            # 流式获取初始回答
-            initial_response = ""
-            async for chunk in self.llm.astream_invoke(messages, **kwargs):
-                initial_response += chunk
-                yield StreamEvent.create(
-                    StreamEventType.LLM_CHUNK,
-                    self.name,
-                    chunk=chunk,
-                    phase="execution"
-                )
-
-            yield StreamEvent.create(
-                StreamEventType.STEP_FINISH,
-                self.name,
-                phase="initial_execution",
-                result=initial_response
-            )
-
-            # 阶段 2：反思与优化循环
-            current_response = initial_response
-
-            for iteration in range(self.max_iterations):
-                # 反思阶段
-                yield StreamEvent.create(
-                    StreamEventType.STEP_START,
-                    self.name,
-                    phase="reflection",
-                    iteration=iteration + 1,
-                    description=f"第 {iteration + 1} 次反思"
-                )
-
-                reflection_prompt = self._build_reflection_prompt(input_text, current_response)
-                reflection_messages = [{"role": "user", "content": reflection_prompt}]
-                reflection_messages, _ = optimize_for_cache(reflection_messages)
-
-                reflection = ""
-                async for chunk in self.llm.astream_invoke(reflection_messages, **kwargs):
-                    reflection += chunk
-                    yield StreamEvent.create(
-                        StreamEventType.THINKING,
-                        self.name,
-                        chunk=chunk,
-                        phase="reflection",
-                        iteration=iteration + 1
-                    )
-
-                yield StreamEvent.create(
-                    StreamEventType.STEP_FINISH,
-                    self.name,
-                    phase="reflection",
-                    iteration=iteration + 1,
-                    reflection=reflection
-                )
-
-                # 优化阶段
-                yield StreamEvent.create(
-                    StreamEventType.STEP_START,
-                    self.name,
-                    phase="refinement",
-                    iteration=iteration + 1,
-                    description=f"第 {iteration + 1} 次优化"
-                )
-
-                refinement_prompt = self._build_refinement_prompt(
-                    input_text,
-                    current_response,
-                    reflection
-                )
-                refinement_messages = [{"role": "user", "content": refinement_prompt}]
-                refinement_messages, _ = optimize_for_cache(refinement_messages)
-
-                refined_response = ""
-                async for chunk in self.llm.astream_invoke(refinement_messages, **kwargs):
-                    refined_response += chunk
-                    yield StreamEvent.create(
-                        StreamEventType.LLM_CHUNK,
-                        self.name,
-                        chunk=chunk,
-                        phase="refinement",
-                        iteration=iteration + 1
-                    )
-
-                yield StreamEvent.create(
-                    StreamEventType.STEP_FINISH,
-                    self.name,
-                    phase="refinement",
-                    iteration=iteration + 1,
-                    result=refined_response
-                )
-
-                current_response = refined_response
-
-            # 发送完成事件
+            # 简化为稳定可用实现：复用同步 run，并通过生命周期事件返回。
+            result = self.run(input_text, **kwargs)
             yield StreamEvent.create(
                 StreamEventType.AGENT_FINISH,
                 self.name,
-                result=current_response,
+                result=result,
                 total_iterations=self.max_iterations
             )
-
-            # 保存到历史
-            self.add_message(Message(input_text, "user"))
-            self.add_message(Message(current_response, "assistant"))
 
         except Exception as e:
             # 发送错误事件

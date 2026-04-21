@@ -43,7 +43,6 @@ __all__ = [
     "ReActAgent",
     "PlanAndSolveAgent",
     "ReflectionAgent",
-    "ContextAwareAgent",
     # tools
     "Tool",
     "ToolParameter",

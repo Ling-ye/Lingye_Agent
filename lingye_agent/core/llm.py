@@ -12,7 +12,7 @@ class LingyeLLM:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        provider: Optional[SUPPORTED_PROVIDERS] = None,
+        provider: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         timeout: Optional[int] = None,

@@ -1,3 +1,5 @@
+from typing import Any, Dict, List
+
 class Memory:
     """
     简单的短期记忆模块，用于存储智能体的行动与反思轨迹。

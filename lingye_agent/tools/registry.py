@@ -80,13 +80,19 @@ class ToolRegistry:
         func_info = self._functions.get(name)
         return func_info["func"] if func_info else None
 
-    def execute_tool(self, name: str, input_text: str) -> str:
+    def execute_tool(
+        self,
+        name: str,
+        input_text: Optional[str] = None,
+        parameters: Optional[dict[str, Any]] = None
+    ) -> str:
         """
         执行工具
 
         Args:
             name: 工具名称
-            input_text: 输入参数
+            input_text: 字符串输入参数（兼容旧接口）
+            parameters: 结构化参数（优先级高于 input_text）
 
         Returns:
             工具执行结果
@@ -95,8 +101,9 @@ class ToolRegistry:
         if name in self._tools:
             tool = self._tools[name]
             try:
-                # 简化参数传递，直接传入字符串
-                return tool.run({"input": input_text})
+                if parameters is not None:
+                    return tool.run(parameters)
+                return tool.run({"input": input_text or ""})
             except Exception as e:
                 return f"错误：执行工具 '{name}' 时发生异常: {str(e)}"
 
@@ -104,7 +111,7 @@ class ToolRegistry:
         elif name in self._functions:
             func = self._functions[name]["func"]
             try:
-                return func(input_text)
+                return func(input_text or "")
             except Exception as e:
                 return f"错误：执行工具 '{name}' 时发生异常: {str(e)}"
 

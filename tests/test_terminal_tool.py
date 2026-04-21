@@ -1,4 +1,5 @@
 import platform
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -296,9 +297,9 @@ with tempfile.TemporaryDirectory() as workspace:
     print()
 
     try:
-        from context import ContextBuilder, ContextConfig, ContextPacket
-        from core import Message
-        from tools import MemoryTool
+        from lingye_agent.context import ContextBuilder, ContextConfig, ContextPacket
+        from lingye_agent.core import Message
+        from lingye_agent.tools import MemoryTool
     except ImportError as err:
         print(
             f"=== 跳过测试 22–23（需要完整依赖，例如 numpy、tiktoken 等）: {err} ===\n"

@@ -14,6 +14,10 @@ def simple_calculate(expression: str) -> str:
         ast.Sub: operator.sub,      # -
         ast.Mult: operator.mul,     # *
         ast.Div: operator.truediv,  # /
+        ast.Pow: operator.pow,      # **
+        ast.Mod: operator.mod,      # %
+        ast.USub: operator.neg,     # unary -
+        ast.UAdd: operator.pos,     # unary +
     }
 
     # 支持的基本函数
@@ -26,26 +30,40 @@ def simple_calculate(expression: str) -> str:
         node = ast.parse(expression, mode='eval')
         result = _eval_node(node.body, operators, functions)
         return str(result)
-    except:
-        return "计算失败，请检查表达式格式"
+    except Exception as e:
+        return f"计算失败: {e}"
 
 def _eval_node(node, operators, functions):
     """简化的表达式求值"""
     if isinstance(node, ast.Constant):
         return node.value
+    elif isinstance(node, ast.UnaryOp):
+        op = operators.get(type(node.op))
+        if op is None:
+            raise ValueError(f"不支持的一元运算: {type(node.op).__name__}")
+        return op(_eval_node(node.operand, operators, functions))
     elif isinstance(node, ast.BinOp):
+        op = operators.get(type(node.op))
+        if op is None:
+            raise ValueError(f"不支持的运算符: {type(node.op).__name__}")
         left = _eval_node(node.left, operators, functions)
         right = _eval_node(node.right, operators, functions)
-        op = operators.get(type(node.op))
         return op(left, right)
     elif isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError(f"不支持的函数调用形式: {type(node.func).__name__}")
         func_name = node.func.id
         if func_name in functions:
-            args = [_eval_node(arg, operators, functions) for arg in node.args]
-            return functions[func_name](*args)
+            func = functions[func_name]
+            if callable(func):
+                args = [_eval_node(arg, operators, functions) for arg in node.args]
+                return func(*args)
+            raise ValueError(f"'{func_name}' 是常量，不能作为函数调用")
     elif isinstance(node, ast.Name):
         if node.id in functions:
             return functions[node.id]
+
+    raise ValueError(f"不支持的表达式: {type(node).__name__}")
 
 def create_calculator_registry():
     """创建包含计算器的工具注册表"""

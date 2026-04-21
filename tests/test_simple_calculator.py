@@ -28,7 +28,7 @@ def test_calculator_tool():
 
 def test_with_simple_agent():
     """测试与SimpleAgent的集成"""
-    from core import LingyeLLM
+    from lingye_agent.core import LingyeLLM
 
     # 创建LLM客户端
     llm = LingyeLLM()

@@ -57,7 +57,7 @@ def test_chain_search_calculate_summarize_llm():
 
     计算步骤通过 context 传入表达式（例如年份差），与搜索主题解耦，便于稳定跑通计算器。
     """
-    from core import LingyeLLM
+    from lingye_agent.core import LingyeLLM
 
     try:
         llm = LingyeLLM()

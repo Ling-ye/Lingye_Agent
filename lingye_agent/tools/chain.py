@@ -42,7 +42,8 @@ class ToolChain:
             except KeyError as e:
                 return f"工具链执行失败:模板变量 {e} 未找到"
 
-            print(f"  步骤 {i}: 使用 {tool_name} 处理 '{tool_input[:50]}...'")
+            preview = tool_input[:50] + ("..." if len(tool_input) > 50 else "")
+            print(f"  步骤 {i}: 使用 {tool_name} 处理 '{preview}'")
 
             # 执行工具
             result = registry.execute_tool(tool_name, tool_input)
