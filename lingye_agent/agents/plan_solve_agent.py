@@ -2,6 +2,7 @@
 
 import ast
 from typing import Optional, List, Dict
+from ..cache import optimize_for_cache
 from ..core import Agent, LingyeLLM, Config, Message
 
 # 默认规划器提示词模板
@@ -59,6 +60,7 @@ class Planner:
         """
         prompt = self.prompt_template.format(question=question)
         messages = [{"role": "user", "content": prompt}]
+        messages, _ = optimize_for_cache(messages)
 
         print("--- 正在生成计划 ---")
         response_text = self.llm_client.invoke(messages, **kwargs) or ""
@@ -109,6 +111,7 @@ class Executor:
                 current_step=step
             )
             messages = [{"role": "user", "content": prompt}]
+            messages, _ = optimize_for_cache(messages)
 
             response_text = self.llm_client.invoke(messages, **kwargs) or ""
 

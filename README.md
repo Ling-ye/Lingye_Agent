@@ -78,6 +78,26 @@
 ### GSSC 上下文工程
 `ContextBuilder` 自动从历史 / 记忆 / RAG / 工具结果四源收集 → 按相关性+新近性打分筛选 → 结构化模板组织 → token 预算内压缩。中文 jieba 分词友好。
 
+### Cache 友好的上下文构建
+`lingye_agent.cache.optimize_for_cache` 是一个无状态纯函数，把任意 messages（和可选 tools）整理成 cache 友好的稳定前缀版本，专门用来提升 OpenAI / DeepSeek / Kimi / 智谱等 Provider 端 Prompt Cache 的命中率：
+
+- 合并连续 system 消息并挪到最前
+- 仅在 system 文本上去抖（替换时间戳 / UUID / 递增 id 等易变内容）
+- tools 列表按 `function.name` 字典序排序、schema properties 字段按 key 排序
+- 严格保留 `assistant.tool_calls` 与紧邻 `tool` 消息的配对顺序
+- user 文本一字不动
+
+业务调用：
+
+```python
+from lingye_agent.cache import optimize_for_cache
+
+messages, tools = optimize_for_cache(messages, tools)
+response = client.chat.completions.create(model=..., messages=messages, tools=tools)
+```
+
+> 内置 6 种 Agent 已在 LLM 调用前默认应用 `optimize_for_cache`，无需手动接入；`ContextBuilder` 也已把每次都变的 `[Task]` 段挪到输出末尾以保持前缀稳定。
+
 ### 流式输出 + 生命周期钩子
 统一的 `StreamEvent` / `LifecycleHook` 体系，方便对接 SSE / WebSocket 前端。
 

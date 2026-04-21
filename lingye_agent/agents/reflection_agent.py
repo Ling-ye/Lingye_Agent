@@ -2,8 +2,8 @@
 
 from typing import Optional, List, Dict, Any, TYPE_CHECKING, AsyncGenerator
 import json
-from datetime import datetime
 
+from ..cache import optimize_for_cache
 from ..core import Agent, LingyeLLM, Config, Message, StreamEvent, StreamEventType, LifecycleHook, Memory
 
 if TYPE_CHECKING:
@@ -179,7 +179,8 @@ class ReflectionAgent(Agent):
         """
         # 如果没有启用工具调用，直接返回
         if not self.enable_tool_calling or not self.tool_registry:
-            llm_response = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            llm_response = self.llm.invoke(cached_messages, **kwargs)
             return llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
 
         # 启用工具调用模式
@@ -190,9 +191,10 @@ class ReflectionAgent(Agent):
             current_iteration += 1
 
             try:
+                cached_messages, cached_tools = optimize_for_cache(messages, tool_schemas)
                 response = self.llm.invoke_with_tools(
-                    messages=messages,
-                    tools=tool_schemas,
+                    messages=cached_messages,
+                    tools=cached_tools,
                     tool_choice="auto",
                     **kwargs
                 )
@@ -253,7 +255,8 @@ class ReflectionAgent(Agent):
 
         # 如果超过最大迭代次数，获取最后一次回答
         if current_iteration >= self.max_tool_iterations:
-            llm_response = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            llm_response = self.llm.invoke(cached_messages, **kwargs)
             return llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
 
         return ""
@@ -308,6 +311,7 @@ class ReflectionAgent(Agent):
                 messages.append({"role": msg.role, "content": msg.content})
 
             messages.append({"role": "user", "content": input_text})
+            messages, _ = optimize_for_cache(messages)
 
             # 流式获取初始回答
             initial_response = ""
@@ -342,6 +346,7 @@ class ReflectionAgent(Agent):
 
                 reflection_prompt = self._build_reflection_prompt(input_text, current_response)
                 reflection_messages = [{"role": "user", "content": reflection_prompt}]
+                reflection_messages, _ = optimize_for_cache(reflection_messages)
 
                 reflection = ""
                 async for chunk in self.llm.astream_invoke(reflection_messages, **kwargs):
@@ -377,6 +382,7 @@ class ReflectionAgent(Agent):
                     reflection
                 )
                 refinement_messages = [{"role": "user", "content": refinement_prompt}]
+                refinement_messages, _ = optimize_for_cache(refinement_messages)
 
                 refined_response = ""
                 async for chunk in self.llm.astream_invoke(refinement_messages, **kwargs):

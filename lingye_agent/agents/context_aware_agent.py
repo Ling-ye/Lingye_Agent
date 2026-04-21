@@ -1,4 +1,5 @@
 from . import SimpleAgent
+from ..cache import optimize_for_cache
 from ..context import ContextBuilder, ContextConfig
 from ..core import LingyeLLM
 from ..tools import MemoryTool, RAGTool
@@ -37,6 +38,7 @@ class ContextAwareAgent(SimpleAgent):
             {"role": "system", "content": optimized_context},
             {"role": "user", "content": user_input}
         ]
+        messages, _ = optimize_for_cache(messages)
         response = self.llm.invoke(messages)
 
         # 3. 更新对话历史

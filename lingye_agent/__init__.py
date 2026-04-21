@@ -23,6 +23,7 @@ from .agents import (
     ReflectionAgent,
 )
 from .tools import Tool, ToolParameter, ToolRegistry, tool_action
+from .cache import optimize_for_cache, sort_tools, normalize_text
 
 __all__ = [
     "__version__",
@@ -48,6 +49,10 @@ __all__ = [
     "ToolParameter",
     "ToolRegistry",
     "tool_action",
+    # cache
+    "optimize_for_cache",
+    "sort_tools",
+    "normalize_text",
 ]
 
 

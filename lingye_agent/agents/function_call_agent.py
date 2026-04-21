@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Iterator, Optional, Union, TYPE_CHECKING, Any, Dict
 
+from ..cache import optimize_for_cache
 from ..core import Agent, Config, LingyeLLM, Message
 
 if TYPE_CHECKING:
@@ -59,7 +60,8 @@ class FunctionCallAgent(Agent):
 
         tool_schemas = self._build_tool_schemas()
         if not tool_schemas:
-            response_text = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            response_text = self.llm.invoke(cached_messages, **kwargs)
             self.add_message(Message(input_text, "user"))
             self.add_message(Message(response_text, "assistant"))
             return response_text
@@ -255,6 +257,7 @@ class FunctionCallAgent(Agent):
                 }
             )
 
+        schemas.sort(key=lambda s: (s.get("function") or {}).get("name", ""))
         return schemas
 
     @staticmethod
@@ -369,10 +372,12 @@ class FunctionCallAgent(Agent):
         if self.llm.max_tokens is not None:
             client_kwargs.setdefault("max_tokens", self.llm.max_tokens)
 
+        cached_messages, cached_tools = optimize_for_cache(messages, tools)
+
         return client.chat.completions.create(
             model=self.llm.model,
-            messages=messages,
-            tools=tools,
+            messages=cached_messages,
+            tools=cached_tools,
             tool_choice=tool_choice,
             **client_kwargs,
         )

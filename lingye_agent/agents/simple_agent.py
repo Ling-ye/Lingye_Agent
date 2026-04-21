@@ -3,6 +3,7 @@
 from typing import Optional, Iterator, TYPE_CHECKING
 import re
 
+from ..cache import optimize_for_cache
 from ..core import Agent, LingyeLLM, Config, Message
 
 if TYPE_CHECKING:
@@ -268,7 +269,8 @@ class SimpleAgent(Agent):
         
         # 如果没有启用工具调用，使用原有逻辑
         if not self.enable_tool_calling:
-            response = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            response = self.llm.invoke(cached_messages, **kwargs)
             self.add_message(Message(input_text, "user"))
             self.add_message(Message(response, "assistant"))
             return response
@@ -279,7 +281,8 @@ class SimpleAgent(Agent):
 
         while current_iteration < max_tool_iterations:
             # 调用LLM
-            response = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            response = self.llm.invoke(cached_messages, **kwargs)
 
             # 检查是否有工具调用
             tool_calls = self._parse_tool_calls(response)
@@ -311,7 +314,8 @@ class SimpleAgent(Agent):
 
         # 如果超过最大迭代次数，获取最后一次回答
         if current_iteration >= max_tool_iterations and not final_response:
-            final_response = self.llm.invoke(messages, **kwargs)
+            cached_messages, _ = optimize_for_cache(messages)
+            final_response = self.llm.invoke(cached_messages, **kwargs)
         
         # 保存到历史记录
         self.add_message(Message(input_text, "user"))
@@ -383,8 +387,9 @@ class SimpleAgent(Agent):
         messages.append({"role": "user", "content": input_text})
         
         # 流式调用LLM
+        cached_messages, _ = optimize_for_cache(messages)
         full_response = ""
-        for chunk in self.llm.stream_invoke(messages, **kwargs):
+        for chunk in self.llm.stream_invoke(cached_messages, **kwargs):
             full_response += chunk
             yield chunk
         

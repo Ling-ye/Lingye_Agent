@@ -274,9 +274,6 @@ class ContextBuilder:
             role_section += "\n".join([p.content for p in p0_packets])
             sections.append(role_section)
         
-        # [Task] - 当前任务
-        sections.append(f"[Task]\n用户问题：{user_query}")
-        
         # [State] - 任务状态
         p1_packets = [p for p in selected_packets if p.metadata.get("type") == "task_state"]
         if p1_packets:
@@ -310,6 +307,9 @@ class ContextBuilder:
                             3. 风险与假设（如有）
                             4. 下一步行动建议（如适用）"""
         sections.append(output_section)
+        
+        # [Task] - 当前任务（放在末尾以保持前缀稳定，最大化 prompt cache 命中）
+        sections.append(f"[Task]\n用户问题：{user_query}")
         
         return "\n\n".join(sections)
     
