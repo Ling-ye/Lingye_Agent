@@ -147,7 +147,7 @@ class ProjectAssistant(SimpleAgent):
 
     def _update_history(self, user_input: str, response: str):
         """更新对话历史"""
-        from core import Message
+        from lingye_agent.core import Message
 
         self.conversation_history.append(
             Message(content=user_input, role="user", timestamp=datetime.now())

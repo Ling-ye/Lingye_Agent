@@ -139,7 +139,7 @@ class FunctionCallAgent(Agent):
     def add_tool(self, tool) -> None:
         """便捷方法：将工具注册到当前Agent"""
         if not self.tool_registry:
-            from tools import ToolRegistry
+            from ..tools import ToolRegistry
 
             self.tool_registry = ToolRegistry()
             self.enable_tool_calling = True

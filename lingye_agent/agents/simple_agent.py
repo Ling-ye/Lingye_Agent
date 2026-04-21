@@ -172,7 +172,7 @@ class SimpleAgent(Agent):
         # 获取工具的参数定义
         try:
             tool_params = tool.get_parameters()
-        except:
+        except Exception:
             return param_dict
 
         # 创建参数类型映射
@@ -330,7 +330,7 @@ class SimpleAgent(Agent):
         如果是MCP工具且启用了auto_expand，会自动展开为多个独立工具
         """
         if not self.tool_registry:
-            from tools import ToolRegistry
+            from ..tools import ToolRegistry
             self.tool_registry = ToolRegistry()
             self.enable_tool_calling = True
 
@@ -351,13 +351,16 @@ class SimpleAgent(Agent):
     def remove_tool(self, tool_name: str) -> bool:
         """移除工具（便利方法）"""
         if self.tool_registry:
-            return self.tool_registry.unregister_tool(tool_name)
+            before = set(self.tool_registry.list_tools())
+            self.tool_registry.unregister(tool_name)
+            after = set(self.tool_registry.list_tools())
+            return tool_name in before and tool_name not in after
         return False
 
     def list_tools(self) -> list:
         """列出所有可用工具"""
         if self.tool_registry:
-            return list(self.tool_registry.tools.keys())
+            return self.tool_registry.list_tools()
         return []
 
     def has_tools(self) -> bool:
@@ -378,8 +381,8 @@ class SimpleAgent(Agent):
         # 构建消息列表
         messages = []
         
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        enhanced_system_prompt = self._get_enhanced_system_prompt()
+        messages.append({"role": "system", "content": enhanced_system_prompt})
         
         for msg in self._history:
             messages.append({"role": msg.role, "content": msg.content})

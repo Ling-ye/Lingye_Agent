@@ -42,14 +42,13 @@ class ContextAwareAgent(SimpleAgent):
         response = self.llm.invoke(messages)
 
         # 3. 更新对话历史
-        from core import Message
-        from datetime import datetime
+        from ..core import Message
 
         self.conversation_history.append(
-            Message(content=user_input, role="user", timestamp=datetime.now())
+            Message(user_input, "user")
         )
         self.conversation_history.append(
-            Message(content=response, role="assistant", timestamp=datetime.now())
+            Message(response, "assistant")
         )
 
         # 4. 将重要交互记录到记忆系统
