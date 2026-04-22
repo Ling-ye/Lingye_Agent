@@ -28,8 +28,8 @@ def test_react_agent():
 
     # 注册搜索工具（如果可用）
     try:
-        from lingye_agent.tools import search  # noqa: F401 - search tool placeholder
-        tool_registry.register_function("search", "搜索互联网信息", search)
+        from lingye_agent.tools import advanced_search  # noqa: F401 - search tool placeholder
+        tool_registry.register_function("advanced_search", "搜索互联网信息", advanced_search)
         print("✅ 搜索工具注册成功")
     except ImportError:
         print("⚠️ 搜索工具未找到，跳过注册")

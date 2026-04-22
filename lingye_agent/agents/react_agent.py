@@ -127,16 +127,16 @@ class ReActAgent(Agent):
             if not action:
                 print("⚠️ 警告：未能解析出有效的Action，流程终止。")
                 break
-            
+
             # 检查是否完成
             if action.startswith("Finish"):
                 final_answer = self._parse_action_input(action)
                 print(f"🎉 最终答案: {final_answer}")
-                
+
                 # 保存到历史记录
                 self.add_message(Message(input_text, "user"))
                 self.add_message(Message(final_answer, "assistant"))
-                
+
                 return final_answer
             
             # 执行工具调用
@@ -172,9 +172,9 @@ class ReActAgent(Agent):
         return final_answer
     
     def _parse_output(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        """解析LLM输出，提取思考和行动"""
-        thought_match = re.search(r"Thought: (.*)", text)
-        action_match = re.search(r"Action: (.*)", text)
+        """解析LLM输出，提取思考和行动（兼容Markdown标签样式）"""
+        thought_match = re.search(r"(?:\*\*)?\s*Thought\s*[:：]\s*(?:\*\*)?\s*(.*)", text, re.IGNORECASE)
+        action_match = re.search(r"(?:\*\*)?\s*Action\s*[:：]\s*(?:\*\*)?\s*(.*)", text, re.IGNORECASE)
         
         thought = thought_match.group(1).strip() if thought_match else None
         action = action_match.group(1).strip() if action_match else None
