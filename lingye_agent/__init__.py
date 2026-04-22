@@ -1,8 +1,27 @@
 """Lingye Agent - 模块化 LLM Agent 框架"""
 
+import sys
 from typing import Any
 
 __version__ = "0.1.0"
+
+
+def _configure_console_encoding() -> None:
+    """Prefer UTF-8 console output; fallback to safe replacement."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (OSError, TypeError, ValueError):
+            try:
+                reconfigure(errors="replace")
+            except (OSError, TypeError, ValueError):
+                pass
+
+
+_configure_console_encoding()
 
 from .core import (
     Agent,

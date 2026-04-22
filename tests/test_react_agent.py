@@ -10,7 +10,7 @@ def test_react_agent():
     """测试MyReActAgent的功能"""
     
     # 创建LLM实例
-    llm = LingyeLLM()
+    llm = LingyeLLM(temperature=0.0, max_tokens=256)
     
     # 创建工具注册表
     tool_registry = ToolRegistry()
@@ -28,8 +28,9 @@ def test_react_agent():
 
     # 注册搜索工具（如果可用）
     try:
-        from lingye_agent.tools import advanced_search  # noqa: F401 - search tool placeholder
-        tool_registry.register_function("advanced_search", "搜索互联网信息", advanced_search)
+        from lingye_agent.tools import AdvancedSearchTool
+        search_tool = AdvancedSearchTool()
+        tool_registry.register_function("advanced_search", "搜索互联网信息", search_tool.search)
         print("✅ 搜索工具注册成功")
     except ImportError:
         print("⚠️ 搜索工具未找到，跳过注册")
@@ -80,9 +81,10 @@ def test_react_agent():
     print(f"\n📝 对话历史记录: {len(agent.get_history())} 条消息")
     
     # 显示工具使用统计
-    print(f"\n🛠️ 可用工具数量: {len(tool_registry._tools)}")
+    all_tools = tool_registry.list_tools()
+    print(f"\n🛠️ 可用工具数量: {len(all_tools)}")
     print("已注册的工具:")
-    for tool_name in tool_registry._tools.keys():
+    for tool_name in all_tools:
         print(f"  - {tool_name}")
     
     print("\n🎉 测试完成！")
@@ -95,7 +97,7 @@ def test_custom_prompt():
     print("="*60)
     
     # 创建LLM和工具注册表
-    llm = LingyeLLM()
+    llm = LingyeLLM(temperature=0.0, max_tokens=256)
     tool_registry = ToolRegistry()
     
     # 注册计算器工具
@@ -129,7 +131,7 @@ Action: [tool_name[input] 或 Finish[答案]]
     )
     
     # 测试数学问题
-    math_question = "计算 15 × 8 + 32 ÷ 4 的结果"
+    math_question = "计算 15 * 8 + 32 / 4 的结果"
     
     try:
         result = custom_agent.run(math_question)
