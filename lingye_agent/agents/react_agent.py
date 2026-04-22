@@ -53,7 +53,7 @@ class ReActAgent(Agent):
         tool_registry: ToolRegistry,
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
-        max_steps: int = 5,
+        max_steps: int = 10,
         custom_prompt: Optional[str] = None
     ):
         """
