@@ -40,7 +40,7 @@ def test_react_agent():
         name="我的推理行动助手",
         llm=llm,
         tool_registry=tool_registry,
-        max_steps=5
+        max_steps=10
     )
     
     print("\n" + "="*60)
@@ -126,7 +126,7 @@ Action: [tool_name[input] 或 Finish[答案]]
         name="数学专家助手",
         llm=llm,
         tool_registry=tool_registry,
-        max_steps=3,
+        max_steps=10,
         custom_prompt=custom_prompt
     )
     
