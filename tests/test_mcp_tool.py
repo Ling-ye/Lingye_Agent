@@ -32,8 +32,10 @@ python test/_mcp_sse_server.py
 """
 
 import os
+import socket
 import sys
 
+import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,6 +43,17 @@ load_dotenv()
 from lingye_agent.core import LingyeLLM
 from lingye_agent.agents import SimpleAgent
 from lingye_agent.tools import MCPTool
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    """检测远程端口是否可达"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, ConnectionRefusedError):
+        return False
 
 
 ROLE_PROMPT = "你是一个由 Lingye 开发的 AI 助手。请使用工具来完成任务，不要自己猜答案。"
@@ -164,7 +177,7 @@ def test_stdio_python_script():
     print("测试 2b: Stdio 传输（Python 脚本路径）")
     print("=" * 60)
 
-    script_path = os.path.join(PROJECT_ROOT, "test", "_mcp_stdio_server.py")
+    script_path = os.path.join(PROJECT_ROOT, "tests", "_mcp_stdio_server.py")
 
     mcp_tool = MCPTool(
         name="demo",
@@ -189,6 +202,7 @@ def test_stdio_python_script():
 # ═══════════════════════════════════════════════════════════════════
 # 3. HTTP 传输测试（Streamable HTTP）
 # ═══════════════════════════════════════════════════════════════════
+@pytest.mark.skipif(not _is_port_open("127.0.0.1", 8000), reason="HTTP MCP 服务器未启动 (127.0.0.1:8000)")
 def test_http_transport():
     """
     HTTP 传输：连接远程 Streamable HTTP MCP 服务器。
@@ -198,7 +212,7 @@ def test_http_transport():
     print("测试 3: HTTP 传输（Streamable HTTP MCP 服务器）")
     print("=" * 60)
 
-    script_path = os.path.join(PROJECT_ROOT, "test", "_mcp_http_server.py")
+    script_path = os.path.join(PROJECT_ROOT, "tests", "_mcp_http_server.py")
     print(f"请先在另一个终端启动 HTTP 服务器: python {script_path}")
     print("服务器默认监听: http://127.0.0.1:8000/mcp")
 
@@ -228,6 +242,7 @@ def test_http_transport():
 # ═══════════════════════════════════════════════════════════════════
 # 4. SSE 传输测试（Server-Sent Events）
 # ═══════════════════════════════════════════════════════════════════
+@pytest.mark.skipif(not _is_port_open("127.0.0.1", 8001), reason="SSE MCP 服务器未启动 (127.0.0.1:8001)")
 def test_sse_transport():
     """
     SSE 传输：连接支持 SSE 的 MCP 服务器。
@@ -237,7 +252,7 @@ def test_sse_transport():
     print("测试 4: SSE 传输（Server-Sent Events MCP 服务器）")
     print("=" * 60)
 
-    script_path = os.path.join(PROJECT_ROOT, "test", "_mcp_sse_server.py")
+    script_path = os.path.join(PROJECT_ROOT, "tests", "_mcp_sse_server.py")
     print(f"请先在另一个终端启动 SSE 服务器: python {script_path}")
     print("服务器默认监听: http://127.0.0.1:8001/sse")
 
@@ -255,7 +270,7 @@ def test_sse_transport():
 
     # 先做直接连接测试，确认 SSE 服务器本身正常
     import asyncio
-    from protocols.mcp.client import MCPClient
+    from lingye_agent.protocols.mcp.client import MCPClient
 
     async def run_sse_direct_test():
         print("\n--- SSE 直连测试 ---")
@@ -303,9 +318,9 @@ def test_config_transport():
     print("=" * 60)
 
     import asyncio
-    from protocols.mcp.client import MCPClient
+    from lingye_agent.protocols.mcp.client import MCPClient
 
-    script_path = os.path.join(PROJECT_ROOT, "test", "_mcp_stdio_server.py")
+    script_path = os.path.join(PROJECT_ROOT, "tests", "_mcp_stdio_server.py")
 
     config = {
         "transport": "stdio",

@@ -177,21 +177,8 @@ class FunctionCallAgent(Agent):
 
 
     def _get_system_prompt(self) -> str:
-        """构建系统提示词，注入工具描述"""
-        base_prompt = self.system_prompt or "你是一个模仿羊宫妃那的AI助理，能够在需要时调用工具完成任务。"
-
-        if not self.enable_tool_calling or not self.tool_registry:
-            return base_prompt
-
-        tools_description = self.tool_registry.get_tools_description()
-        if not tools_description or tools_description == "暂无可用工具":
-            return base_prompt
-
-        prompt = base_prompt + "\n\n## 可用工具\n"
-        prompt += "当你判断需要外部信息或执行动作时，可以直接通过函数调用使用以下工具：\n"
-        prompt += tools_description + "\n"
-        prompt += "\n请主动决定是否调用工具，合理利用多次调用来获得完备答案。"
-        return prompt
+        """构建系统提示词；工具定义仅通过原生 function calling schema 传递。"""
+        return self.system_prompt or "你是一个由 Lingye 开发的 AI 助手，能够在需要时调用工具完成任务。"
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
         if not self.enable_tool_calling or not self.tool_registry:

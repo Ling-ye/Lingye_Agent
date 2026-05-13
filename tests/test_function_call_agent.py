@@ -1,5 +1,7 @@
 import re
 from typing import Optional
+
+import pytest
 from dotenv import load_dotenv
 
 from lingye_agent.agents import FunctionCallAgent
@@ -23,6 +25,7 @@ def _extract_number(text: str) -> Optional[str]:
     return matches[-1]
 
 
+@pytest.mark.parametrize("expression", ["114 * 514 + 1551", "sqrt(16)"])
 def test_real_function_call_agent(expression: str) -> None:
     """
     要求模型调用工具 `my_calculator` 来计算 expression，并最终输出结果数字。
@@ -32,7 +35,7 @@ def test_real_function_call_agent(expression: str) -> None:
     expected_str = str(expected).strip()
     print(f"本地计算器输出的计算结果为{expected_str}")
 
-    llm = LingyeLLM(temperature=0.0, max_tokens=64)
+    llm = LingyeLLM(temperature=0.0, max_tokens=256)
 
     client = getattr(llm, "_client", None)
     if client is not None:
