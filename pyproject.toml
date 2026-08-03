@@ -5,13 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "lingye-agent"
 version = "0.1.0"
-description = "模块化 LLM Agent 框架：多范式 Agent + 多类型记忆 + RAG + MCP + GSSC 上下文工程"
-readme = "README.md"
+description = "Modular Python framework for LLM agents with multiple agent patterns, memory, RAG, MCP, and context engineering."
+readme = "README.en.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [{ name = "Lingye" }]
+keywords = ["llm", "ai-agents", "rag", "mcp", "memory", "context-engineering"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -42,11 +43,28 @@ nlp = ["jieba>=0.42.1", "dashscope>=1.14.0"]
 doc = ["markitdown[pdf]>=0.0.1a3"]
 ui = ["gradio>=4.0.0"]
 all = ["lingye-agent[rag,graph,mcp,nlp,doc,ui]"]
-dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "build>=1.2.2",
+    "twine>=5.1.1",
+    "tomli>=2.0.1; python_version < '3.11'",
+]
 
 [project.urls]
-Homepage = "https://github.com/yourname/lingye-agent"
-Repository = "https://github.com/yourname/lingye-agent"
+Homepage = "https://github.com/Ling-ye/Lingye_Agent"
+Repository = "https://github.com/Ling-ye/Lingye_Agent"
+Documentation = "https://github.com/Ling-ye/Lingye_Agent/blob/main/docs/guide.en.md"
+Issues = "https://github.com/Ling-ye/Lingye_Agent/issues"
+Changelog = "https://github.com/Ling-ye/Lingye_Agent/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["lingye_agent"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.vscode",
+    "/AGENTS.md",
+    "/my_main.py",
+    "/todo.md",
+]
