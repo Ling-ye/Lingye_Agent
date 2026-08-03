@@ -144,6 +144,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# Lingye Agent runtime data
+/memory_data/
+/knowledge_base/
+/data_science_kb/
+
 # Spyder project settings
 .spyderproject
 .spyproject
