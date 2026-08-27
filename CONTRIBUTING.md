@@ -6,15 +6,23 @@
 
 ### 本地环境
 
-~~~bash
+Windows PowerShell 下方命令要求 `python` 指向 Python 3.10+；否则请改用该解释器 `python.exe` 的绝对路径。
+
+~~~powershell
 git clone https://github.com/Ling-ye/Lingye_Agent.git
 cd Lingye_Agent
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ~~~
 
-Linux 或 macOS 使用 source .venv/bin/activate。
+Linux 或 macOS 用户在进入仓库后执行：
+
+~~~bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+~~~
 
 ### 修改要求
 
@@ -29,7 +37,7 @@ Linux 或 macOS 使用 source .venv/bin/activate。
 ~~~bash
 python -m pytest -q tests/test_release_contract.py tests/test_function_call_agent_unit.py tests/test_simple_calculator.py::test_calculator_tool
 python -m build
-python -m twine check dist/*
+python -m twine check dist/*.whl dist/*.tar.gz
 python scripts/verify_release_artifact.py dist/lingye_agent-0.1.0-py3-none-any.whl
 ~~~
 
@@ -45,13 +53,20 @@ Thank you for improving Lingye Agent. Search existing issues before opening a ne
 
 ### Local setup
 
-~~~bash
+The Windows PowerShell commands below require `python` to resolve to Python 3.10+. Otherwise, use the absolute path to the required `python.exe`.
+
+~~~powershell
 git clone https://github.com/Ling-ye/Lingye_Agent.git
 cd Lingye_Agent
 python -m venv .venv
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-# Linux / macOS
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+~~~
+
+Linux / macOS:
+
+~~~bash
+python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ~~~
@@ -69,7 +84,7 @@ python -m pip install -e ".[dev]"
 ~~~bash
 python -m pytest -q tests/test_release_contract.py tests/test_function_call_agent_unit.py tests/test_simple_calculator.py::test_calculator_tool
 python -m build
-python -m twine check dist/*
+python -m twine check dist/*.whl dist/*.tar.gz
 python scripts/verify_release_artifact.py dist/lingye_agent-0.1.0-py3-none-any.whl
 ~~~
 

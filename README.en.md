@@ -2,81 +2,66 @@
 
 English | [简体中文](README.md)
 
-> A modular Python framework for LLM agents, combining multiple agent patterns, memory, RAG, MCP, and context engineering.
+> A modular Python framework for learning, experimenting with, and building LLM agents with multiple agent strategies, tool calling, memory, RAG, MCP, and context engineering.
 
 [![CI](https://github.com/Ling-ye/Lingye_Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ling-ye/Lingye_Agent/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Ling-ye/Lingye_Agent?display_name=tag)](https://github.com/Ling-ye/Lingye_Agent/releases)
 [![Python](https://img.shields.io/badge/Python-3.10--3.13-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Status-Beta-yellow.svg)](#beta-status)
+[![Status](https://img.shields.io/badge/Status-Beta-yellow.svg)](#project-status)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## Why Lingye Agent
+## Overview
 
-Lingye Agent separates agent execution, tools, memory, retrieval, and context construction into modules that can be used independently. It is intended for developers who want to compare agent patterns in one codebase or combine MCP, RAG, memory, and prompt-cache optimization in a prototype.
+Lingye Agent separates decision loops, model calls, tool execution, context construction, and knowledge storage into composable modules. Start with a simple conversational agent, then add function tools, long-term memory, a knowledge base, or MCP services as the task grows.
 
-- Six agent patterns: Simple, Function Call, ReAct, Plan-and-Solve, Reflection, and Context-Aware.
-- A unified interface for OpenAI-compatible model endpoints, selected through environment variables.
-- Working, episodic, semantic, and perceptual memory with SQLite, Qdrant, and Neo4j integrations.
-- Document retrieval, MCP client/server support, a tool registry, streaming events, and lifecycle hooks.
-- GSSC (Gather, Select, Structure, Compress) context construction and stable-prefix cache optimization.
+The project includes six execution strategies: Simple, Function Call, ReAct, Plan-and-Solve, Reflection, and Context-Aware. They share model, message, and tool abstractions while keeping each execution flow explicit, making the codebase useful for learning, comparing designs, and building prototypes.
 
-## Beta status
+## What you can build
 
-v0.1.0 is the first stable-channel GitHub release, while the project maturity remains Beta. Core packaging, release metadata, wheel construction, and fast offline checks are release gates. The full test suite includes slower scenarios and integrations that require external services, so it is currently reported but not blocking. Qdrant, Neo4j, MCP servers, hosted models, and search providers must be deployed or configured separately.
+- **Conversational assistants:** build assistants with system prompts and history on OpenAI-compatible model endpoints.
+- **Tool-using agents:** let a model call calculators, local functions, and custom tools through native function calling or an explicit ReAct loop.
+- **Complex-task workflows:** decompose work with Plan-and-Solve or improve results through repeated Reflection passes.
+- **Knowledge-base assistants:** combine document parsing, embeddings, Qdrant, and RAG for project-document retrieval.
+- **Long-running project assistants:** use working, episodic, semantic, and perceptual memory for current state, experience, and searchable information.
+- **MCP integrations:** connect stdio, HTTP, or SSE MCP services through the same tool execution path.
+- **Context-engineering experiments:** use GSSC and request preprocessing to control token budgets, context structure, and stable prefixes.
 
-## Installation
+## Beginner quick start
 
-The project is currently distributed through [GitHub Releases](https://github.com/Ling-ye/Lingye_Agent/releases) and source. It is not published on PyPI.
+Prepare Python 3.10 or later and an OpenAI-compatible model endpoint.
 
-### Install the release wheel
-
-~~~bash
-python -m pip install "https://github.com/Ling-ye/Lingye_Agent/releases/download/v0.1.0/lingye_agent-0.1.0-py3-none-any.whl"
-~~~
-
-Install optional features by combining extras with the wheel URL:
-
-~~~bash
-python -m pip install "lingye-agent[rag,mcp] @ https://github.com/Ling-ye/Lingye_Agent/releases/download/v0.1.0/lingye_agent-0.1.0-py3-none-any.whl"
-~~~
-
-### Install from source
+### 1. Get the source
 
 ~~~bash
 git clone https://github.com/Ling-ye/Lingye_Agent.git
 cd Lingye_Agent
-git checkout v0.1.0
-
-python -m venv .venv
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-# Linux / macOS
-source .venv/bin/activate
-
-python -m pip install -e .
 ~~~
 
-Available extras:
+### 2. Create an environment and install
 
-| Extra | Capability |
-|---|---|
-| rag | Qdrant, local embeddings, reranking, and TF-IDF |
-| graph | Neo4j graph storage |
-| mcp | FastMCP client and server |
-| nlp | jieba and DashScope |
-| doc | MarkItDown document parsing |
-| ui | Gradio examples |
-| all | All optional runtime features |
-| dev | Tests, package builds, and package checks |
+Windows PowerShell:
 
-## Quick start
+~~~powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+Copy-Item .env.example .env
+~~~
 
-Copy the environment template and configure at least one OpenAI-compatible model endpoint:
+Linux / macOS:
 
 ~~~bash
-copy .env.example .env
-# Linux / macOS: cp .env.example .env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+cp .env.example .env
 ~~~
+
+Open `.env` and set `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL_ID` for the selected model service. You can instead use a provider-specific configuration from the template.
+
+### 3. Run your first agent
+
+Save the following as `quickstart.py`:
 
 ~~~python
 from dotenv import load_dotenv
@@ -87,90 +72,90 @@ load_dotenv()
 agent = SimpleAgent(
     name="assistant",
     llm=LingyeLLM(),
-    system_prompt="Be concise and reliable.",
+    system_prompt="You are a concise, reliable assistant.",
 )
 
 print(agent.run("Explain RAG in one sentence."))
 ~~~
 
-Add a function tool:
+Run it:
 
-~~~python
-from lingye_agent import FunctionCallAgent, LingyeLLM, ToolRegistry
-from lingye_agent.tools import simple_calculate
-
-registry = ToolRegistry()
-registry.register_function(
-    name="calculator",
-    description="Evaluate a basic arithmetic expression",
-    func=simple_calculate,
-)
-
-agent = FunctionCallAgent(
-    name="calculator-assistant",
-    llm=LingyeLLM(),
-    tool_registry=registry,
-)
-
-print(agent.run("Calculate sqrt(144) + 12 * 8"))
+~~~bash
+python quickstart.py
 ~~~
 
-## Capability matrix
+This example calls the configured model service. Check the provider's usage charges when using a hosted model.
 
-| Subsystem | Entry point | Core package | Optional dependency or service |
-|---|---|---:|---|
-| Agents | lingye_agent.agents | Yes | Model API |
-| Tools and registry | lingye_agent.tools | Yes | Tool-specific |
-| Context construction | lingye_agent.context | Yes | jieba optional |
-| Working memory | lingye_agent.memory | Yes | None |
-| Semantic retrieval / RAG | lingye_agent.memory.rag | No | rag, Qdrant |
-| Graph storage | lingye_agent.memory.storage | No | graph, Neo4j |
-| MCP | lingye_agent.protocols.mcp | No | mcp |
-| Example UI | examples | No | ui and related services |
+### Install the SDK in an existing project
 
-## Architecture
-
-~~~mermaid
-flowchart TD
-    Examples["Examples / Applications"] --> Agents["Agent patterns"]
-    Agents --> Core["Core: Agent, LLM, Message, Events"]
-    Agents --> Tools["Tools and MCP"]
-    Agents --> Context["GSSC Context Builder"]
-    Context --> Memory["Memory and RAG"]
-    Tools --> Protocols["MCP transports"]
-    Memory --> Stores["SQLite / Qdrant / Neo4j"]
+~~~bash
+python -m pip install "https://github.com/Ling-ye/Lingye_Agent/releases/download/v0.1.0/lingye_agent-0.1.0-py3-none-any.whl"
 ~~~
 
-## Documentation and examples
+See [Runtime and dependency boundaries](docs/guide.en.md#2-runtime-and-dependency-boundaries) and [Core interfaces and LLM configuration](docs/guide.en.md#3-core-interfaces-and-llm-configuration) for the complete setup reference.
 
-- [English guide](docs/guide.en.md)
-- [中文使用指南](docs/guide.zh-CN.md)
+## Choose an entry point
+
+| Goal | Suggested entry point | Prepare |
+|---|---|---|
+| Verify the model and prompt first | `SimpleAgent` | Base installation and a model endpoint |
+| Call functions or tools with explicit parameters | `FunctionCallAgent` | A model endpoint with compatible tool calling |
+| Expose a reason–act–observe loop | `ReActAgent` | A tool registry and iteration limit |
+| Decompose and execute multi-step work | `PlanAndSolveAgent` | Additional model-call budget |
+| Critique and rewrite results repeatedly | `ReflectionAgent` | Reflection count and call budget |
+| Build context from memory and a knowledge base | `ContextAwareAgent` | `nlp`, `rag`, embeddings, and Qdrant |
+
+Add dependencies for the selected scenario, for example:
+
+~~~bash
+# GSSC context construction
+python -m pip install -e ".[nlp]"
+
+# RAG, PDF parsing, and context construction
+python -m pip install -e ".[rag,doc,nlp]"
+
+# MCP client and server
+python -m pip install -e ".[mcp]"
+~~~
+
+## Example projects
+
+[`examples/`](examples) demonstrates these compositions:
+
+- [`PDF_learning_assistant.py`](examples/PDF_learning_assistant.py): PDF, RAG, Memory, and Gradio.
+- [`codebase_maintainer.py`](examples/codebase_maintainer.py): code-analysis tools, Working Memory, and GSSC.
+- [`project_assistant.py`](examples/project_assistant.py): notes, memory, RAG, and project context.
+- [`doc_assistant.py`](examples/doc_assistant.py): sequential collaboration between multiple agents and MCP tools.
+- [`tavily_search.py`](examples/tavily_search.py): web search through MCP.
+
+See [Examples and repository integration](docs/guide.en.md#14-examples-and-repository-integration) for each example's extras, model, database, directory-permission, and third-party-service requirements.
+
+## Architecture and API documentation
+
+The [English architecture and API guide](docs/guide.en.md) covers:
+
+- Layer responsibilities, dependency direction, and the request execution path.
+- Core interfaces including `Agent`, `LingyeLLM`, `Message`, `ToolRegistry`, and `ContextBuilder`.
+- Execution strategy, tool behavior, history handling, and streaming behavior for all six agents.
+- Design and runtime boundaries for GSSC, prompt caching, memory, RAG, and MCP.
+- Contracts for adding an agent, tool, or storage backend.
+- Security boundaries, validation commands, and troubleshooting.
+
+Other resources:
+
+- [中文架构与接口指南](docs/guide.zh-CN.md)
 - [Environment template](.env.example)
-- [Example applications](examples)
 - [Changelog](CHANGELOG.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 
-## Release checks
+## Project status
 
-Blocking release checks:
-
-~~~bash
-python -m pytest -q tests/test_release_contract.py tests/test_function_call_agent_unit.py tests/test_simple_calculator.py::test_calculator_tool
-python -m build
-python -m twine check dist/*
-python scripts/verify_release_artifact.py dist/lingye_agent-0.1.0-py3-none-any.whl
-~~~
-
-Run the full suite separately. It can access optional services or take substantially longer:
-
-~~~bash
-python -m pytest
-~~~
+The current release is `v0.1.0`, and project maturity is **Beta**. Configure model, embedding, Qdrant, Neo4j, MCP, and search services for the selected scenario. Tools that perform command, filesystem, network, or database writes inherit host-process permissions, so run them in a trusted workspace with least-privilege credentials.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Report security issues privately according to [SECURITY.md](SECURITY.md); do not disclose secrets or exploitable details in a public issue.
+Read the [contributing guide](CONTRIBUTING.md) before submitting code. Report security issues privately according to the [security policy](SECURITY.md).
 
 ## License
 
